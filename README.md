@@ -167,14 +167,14 @@ Dependencies: 0
 
 ## MCP Server (Agent Integration)
 
-GroundCheck ships with an MCP server that gives any AI agent (Copilot, Claude, Cursor) persistent fact memory with contradiction detection:
+GroundCheck ships with an MCP server that gives any AI agent persistent fact memory with contradiction detection. Works with **VS Code Copilot**, **Claude Desktop**, **Cursor**, and any MCP-compatible client.
 
 ```bash
 pip install groundcheck[mcp]
-groundcheck-mcp --db .groundcheck/memory.db
 ```
 
-Add to VS Code's MCP config:
+Add to your config (VS Code `.vscode/mcp.json`, Claude `claude_desktop_config.json`, etc.):
+
 ```json
 {
   "servers": {
@@ -186,7 +186,15 @@ Add to VS Code's MCP config:
 }
 ```
 
-Tools exposed: `crt_store_fact`, `crt_check_memory`, `crt_verify_output`.
+Three tools are exposed:
+
+| Tool | When to call | What it does |
+|------|-------------|-------------|
+| `crt_store_fact` | User states a fact | Stores with trust score, detects contradictions |
+| `crt_check_memory` | Before answering about the user | Returns relevant memories with trust scores |
+| `crt_verify_output` | Before sending a response | Catches hallucinations, auto-corrects, scores confidence |
+
+**[Full MCP setup guide →](docs/mcp-server.md)**
 
 ## Development
 
