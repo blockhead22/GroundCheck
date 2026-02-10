@@ -354,11 +354,11 @@ def test_partial_grounding_accuracy():
 
 def test_semantic_paraphrase_matching():
     """Test that semantic paraphrases are correctly matched."""
-    verifier = GroundCheck()
+    verifier = GroundCheck(neural=True)
     
-    # Only run if embedding model is available
-    if not hasattr(verifier, 'embedding_model') or verifier.embedding_model is None:
-        pytest.skip("Semantic matching not available (embedding model not loaded)")
+    # Only run if semantic matcher is available
+    if verifier.semantic_matcher is None:
+        pytest.skip("Semantic matching not available (neural deps not installed)")
     
     # Test employer paraphrases
     memories = [
@@ -378,11 +378,11 @@ def test_semantic_paraphrase_matching():
 
 def test_semantic_location_paraphrases():
     """Test location paraphrases."""
-    verifier = GroundCheck()
+    verifier = GroundCheck(neural=True)
     
-    # Only run if embedding model is available
-    if not hasattr(verifier, 'embedding_model') or verifier.embedding_model is None:
-        pytest.skip("Semantic matching not available (embedding model not loaded)")
+    # Only run if semantic matcher is available
+    if verifier.semantic_matcher is None:
+        pytest.skip("Semantic matching not available (neural deps not installed)")
     
     memories = [
         Memory(id="m1", text="User lives in Seattle", trust=0.9)
@@ -401,11 +401,11 @@ def test_semantic_location_paraphrases():
 
 def test_semantic_threshold_prevents_false_positives():
     """Test that semantic threshold prevents false positives."""
-    verifier = GroundCheck()
+    verifier = GroundCheck(neural=True)
     
-    # Only run if embedding model is available
-    if not hasattr(verifier, 'embedding_model') or verifier.embedding_model is None:
-        pytest.skip("Semantic matching not available (embedding model not loaded)")
+    # Only run if semantic matcher is available
+    if verifier.semantic_matcher is None:
+        pytest.skip("Semantic matching not available (neural deps not installed)")
     
     memories = [
         Memory(id="m1", text="User works at Google", trust=0.9)

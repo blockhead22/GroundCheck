@@ -94,38 +94,56 @@ class GroundCheck:
     # Only memories below 0.75 are considered unreliable noise
     MINIMUM_TRUST_FOR_DISCLOSURE = 0.75
     
-    def __init__(self):
-        """Initialize the GroundCheck verifier with semantic matching support."""
+    def __init__(self, neural: bool = True):
+        """Initialize the GroundCheck verifier.
+        
+        Args:
+            neural: Enable neural/semantic matching for paraphrase detection.
+                Requires ``pip install groundcheck[neural]``.  When True (the
+                default), GroundCheck will attempt to load sentence-transformers
+                and NLI models lazily on first use.  When False, only regex and
+                fuzzy matching are used (zero-dependency, sub-2 ms).
+        """
         self.memory_claim_regex = create_memory_claim_regex()
+        self.neural = neural
         self.semantic_threshold = 0.85  # Similarity threshold for paraphrases
         
         # Initialize hybrid extractor (graceful fallback if neural unavailable)
-        try:
-            from .neural_extractor import HybridFactExtractor
-            self.hybrid_extractor = HybridFactExtractor(
-                confidence_threshold=0.8,
-                use_neural=True
-            )
-        except ImportError:
-            self.hybrid_extractor = None
+        self.hybrid_extractor = None
+        if neural:
+            try:
+                from .neural_extractor import HybridFactExtractor
+                self.hybrid_extractor = HybridFactExtractor(
+                    confidence_threshold=0.8,
+                    use_neural=True
+                )
+            except ImportError:
+                pass
         
         # Initialize semantic matcher (graceful fallback if embeddings unavailable)
-        try:
-            from .semantic_matcher import SemanticMatcher
-            self.semantic_matcher = SemanticMatcher(
-                use_embeddings=True,
-                embedding_threshold=0.85
-            )
-        except ImportError:
-            self.semantic_matcher = None
+        # Models are loaded lazily on first call — no eager download.
+        self.semantic_matcher = None
+        if neural:
+            try:
+                from .semantic_matcher import SemanticMatcher
+                self.semantic_matcher = SemanticMatcher(
+                    use_embeddings=True,
+                    embedding_threshold=0.85
+                )
+            except ImportError:
+                pass
         
-        # Load embedding model for semantic matching (backward compatibility)
-        try:
-            from sentence_transformers import SentenceTransformer
-            self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        except Exception:
-            # If model loading fails, semantic matching will be skipped
-            self.embedding_model = None
+        # Initialize NLI-based contradiction detector (lazy model loading)
+        self.semantic_contradiction_detector = None
+        if neural:
+            try:
+                from .semantic_contradiction import SemanticContradictionDetector
+                self.semantic_contradiction_detector = SemanticContradictionDetector(
+                    use_nli=True,
+                    contradiction_threshold=0.7
+                )
+            except ImportError:
+                pass
         
         # TwoTierFactSystem is only available inside the full CRT project.
         # For the standalone PyPI package, this is always None.
@@ -212,35 +230,6 @@ class GroundCheck:
                 overlap = len(claimed_terms & supported_terms) / len(claimed_terms)
                 if overlap >= 0.7:  # 70% term overlap
                     return True
-        
-        # Tier 3: Semantic similarity (handles paraphrases)
-        if use_semantic and hasattr(self, 'embedding_model') and self.embedding_model is not None:
-            try:
-                # Import at function level to avoid issues if package not installed
-                from sentence_transformers import util
-                
-                # Encode claimed value
-                claimed_emb = self.embedding_model.encode(
-                    claimed, 
-                    convert_to_tensor=True
-                )
-                
-                # Check similarity with each memory value
-                for mem_val in supported_values:
-                    mem_emb = self.embedding_model.encode(
-                        mem_val,
-                        convert_to_tensor=True
-                    )
-                    
-                    similarity = util.cos_sim(claimed_emb, mem_emb).item()
-                    
-                    # Use threshold for semantic matching
-                    if similarity >= self.semantic_threshold:
-                        return True
-                        
-            except Exception:
-                # Fall back to non-semantic matching if embeddings fail
-                pass
         
         return False
     
@@ -376,6 +365,23 @@ class GroundCheck:
             unique_values = set(f['value'] for f in facts)
             
             if len(unique_values) > 1:
+                # For dynamically-discovered slots (not in KNOWN_EXCLUSIVE_SLOTS),
+                # use NLI to confirm the contradiction is genuine when the
+                # SemanticContradictionDetector is available.  Known-exclusive
+                # slots are always contradictions by definition.
+                if slot not in self.KNOWN_EXCLUSIVE_SLOTS and self.semantic_contradiction_detector is not None:
+                    # Pick two representative values and check via NLI
+                    val_list = list(unique_values)
+                    try:
+                        nli_result = self.semantic_contradiction_detector.check_contradiction(
+                            val_list[0], val_list[1], slot=slot
+                        )
+                        if not nli_result.is_contradiction:
+                            # NLI says these values are compatible — skip
+                            continue
+                    except Exception:
+                        pass  # Fall through to slot-based detection
+
                 # Contradiction detected!
                 # Build aligned lists to ensure values, memory_ids, timestamps, and trust_scores match
                 values = []

@@ -5,6 +5,41 @@ https://github.com/blockhead22/GroundCheck/releases/new
 
 ---
 
+## groundcheck-v0.3.0 — Neural Mode
+
+**Tag:** `groundcheck-v0.3.0`
+**Title:** v0.3.0 — Neural Mode
+
+### What's New
+
+**Neural paraphrase detection** — GroundCheck can now match "employed by Google" against "works at Google", "NYC" against "New York City", and "software developer" against "software engineer". Install the optional neural extras to enable:
+
+```bash
+pip install groundcheck[neural]
+```
+
+**Explicit neural control** — `GroundCheck(neural=True)` enables semantic matching. Pass `neural=False` for zero-dependency sub-2ms mode. Default is `True`.
+
+**Lazy model loading** — Embedding and NLI models load on first use, not at import. Zero startup cost until you need paraphrase matching.
+
+**NLI contradiction refinement** — Dynamically-discovered slot contradictions are now confirmed via Natural Language Inference, reducing false positives.
+
+### Breaking Changes
+None. All v0.2.x code is backward compatible.
+
+### Stats
+- 302 tests passing (18 new for neural integration)
+- All 16 previous neural tests now run (0 skipped)
+- Still zero runtime dependencies for core mode
+
+### Install
+```bash
+pip install groundcheck==0.3.0          # Core only
+pip install "groundcheck[neural]==0.3.0" # With paraphrase matching
+```
+
+---
+
 ## groundcheck-v0.2.0 — Universal Extraction
 
 **Tag:** `groundcheck-v0.2.0`

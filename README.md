@@ -117,17 +117,28 @@ GroundCheck v0.2 extracts facts from **any domain** — not just personal profil
 
 ## Neural Mode (Optional)
 
-For paraphrase handling and semantic matching:
+For paraphrase handling and semantic matching, install the neural extras:
 
 ```bash
 pip install groundcheck[neural]
 ```
 
 ```python
-# Automatically used when sentence-transformers is installed
-verifier = GroundCheck()  # Detects neural availability
-result = verifier.verify("Employed by Google", memories)  # Matches "works at Google"
+# Explicit control (v0.3.0+)
+verifier = GroundCheck(neural=True)   # Enable paraphrase matching (default)
+verifier = GroundCheck(neural=False)  # Zero-dep, sub-2ms regex only
+
+# Catches paraphrases regex can't:
+memories = [Memory(id="m1", text="User works at Google")]
+result = verifier.verify("Employed by Google", memories)   # ✓ passes
+result = verifier.verify("I live in New York City",        # ✓ matches "NYC"
+         [Memory(id="m2", text="User lives in NYC")])
 ```
+
+Models are loaded **lazily** on first use — no startup cost until you need them.
+
+Five matching strategies fire in order: exact → normalization → fuzzy → synonym → embedding.
+NLI-based contradiction refinement filters false positives for dynamically-discovered slots.
 
 | Mode | Paraphrase Accuracy | Latency |
 |------|-------------------|---------|
@@ -137,6 +148,7 @@ result = verifier.verify("Employed by Google", memories)  # Matches "works at Go
 ## API Reference
 
 ### `GroundCheck`
+- `GroundCheck(neural=True)` — constructor. `neural=True` enables semantic matching (requires `groundcheck[neural]`), `neural=False` for zero-dependency mode.
 - `verify(generated_text, retrieved_memories, mode="strict")` → `VerificationReport`
 - `extract_claims(text)` → `Dict[str, ExtractedFact]`
 - `find_support(claim, memories)` → match info

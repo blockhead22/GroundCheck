@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0] - 2025-07-15
+
+### Added
+- **`neural=True` parameter** — `GroundCheck(neural=True)` explicitly controls whether semantic matching is active. Defaults to `True` for backward compatibility; pass `neural=False` for zero-dependency sub-2ms mode.
+- **Lazy model loading** — Embedding models (all-MiniLM-L6-v2) and NLI models (nli-deberta-v3-small) are loaded lazily on first use, not at import time. Zero startup cost until neural features are needed.
+- **SemanticContradictionDetector integration** — NLI-based contradiction refinement for dynamically-discovered slots. Known-exclusive slots still use fast slot-based detection; dynamic slots get NLI confirmation to reduce false positives.
+- **18 new neural integration tests** — End-to-end tests proving:
+  - Paraphrase detection: "employed by Google" ↔ "works at Google"
+  - Location normalization: "resides in Seattle" ↔ "lives in Seattle"  
+  - Education paraphrases: "studied at MIT" ↔ "graduated from MIT"
+  - Value-level matching: "NYC" ↔ "New York City" (embedding similarity)
+  - Synonym expansion: "software developer" ↔ "software engineer"
+  - Negative tests: unrelated entities still rejected
+
+### Changed
+- Removed eager `SentenceTransformer` loading from `GroundCheck.__init__()` — the `SemanticMatcher` handles lazy loading, eliminating redundant ~500ms startup overhead
+- Removed dead inline embedding fallback code from `_is_value_supported()` — all embedding logic now lives in `SemanticMatcher`
+- `_detect_contradictions()` now uses NLI to confirm dynamic-slot contradictions before flagging them
+
+### Fixed
+- Neural mode no longer loads models at import time, reducing memory usage for users who don't need embeddings
+- False positive contradictions in dynamic (non-hardcoded) slots are now filtered by NLI confidence
+
 ## [0.2.0] - 2026-02-10
 
 ### Added
