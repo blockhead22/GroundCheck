@@ -172,6 +172,18 @@ def extract_fact_slots(text: str) -> Dict[str, ExtractedFact]:
             if name and name.lower() not in _NAME_STOPWORDS:
                 facts["name"] = ExtractedFact("name", name, _norm_text(name))
 
+    # Greeting pattern: "Hi Mike!", "Hey Sarah,", "Hello Dr. Jones"
+    # Only match when the greeting is near the start of the text (first 50 chars)
+    if "name" not in facts:
+        m_greet = re.search(
+            r"(?:^|\.\s+)(?:Hi|Hey|Hello|Yo|Howdy|Sup|Greetings)\s+([A-Z][A-Za-z'-]{1,40})(?:\s*[!,.\s]|$)",
+            text[:80],
+        )
+        if m_greet:
+            greet_name = m_greet.group(1).strip()
+            if greet_name.lower() not in _NAME_STOPWORDS and greet_name.lower() not in {"there", "all", "everyone", "everybody", "folks", "team", "guys", "dear"}:
+                facts["name"] = ExtractedFact("name", greet_name, _norm_text(greet_name))
+
     # Very explicit "call me" pattern
     if "name" not in facts:
         m = re.search(r"\bcall me\s+" + name_pat, text, flags=re.IGNORECASE)
@@ -269,6 +281,14 @@ def extract_fact_slots(text: str) -> Dict[str, ExtractedFact]:
         if not m:
             # Try "[Name] is a [title] at [company]" pattern (for third-person references)
             m = re.search(r"\b[A-Z][a-z]+\s+(?:is|was)\s+a\s+[A-Z][A-Za-z\s]+?\s+at\s+([A-Z][A-Za-z0-9\s&\-\.]+?)(?:\s+and|\s+in|,|\.|;|\s*$)", text, flags=re.IGNORECASE)
+        if not m:
+            # Try "role/position/job/career/things at [company]" pattern
+            # Catches: "your role at Disney", "things at PayPal", "my position at Google"
+            m = re.search(r"\b(?:my|your|the|their|his|her)\s+(?:role|position|job|career|work|time|gig|stint|things)\s+at\s+([A-Z][A-Za-z0-9\s&\-\.]+?)(?:\s+and|\s+but|\s+in|\s+is|\s+was|\s+has|,|\.|;|\?|!|\s*$)", text, flags=re.IGNORECASE)
+        if not m:
+            # Try "[verb] at [company]" with contextual verbs
+            # Catches: "started at Google", "joined Netflix", "left Amazon"
+            m = re.search(r"\b(?:started|joined|left|quit|resigned from|hired at|employed at|interning at|interned at)\s+([A-Z][A-Za-z0-9\s&\-\.]+?)(?:\s+and|\s+but|\s+in|\s+as|,|\.|;|\s*$)", text, flags=re.IGNORECASE)
         if m:
             employer_raw = m.group(1)
             # Trim at common continuations (redundant now but kept for safety)
@@ -306,6 +326,10 @@ def extract_fact_slots(text: str) -> Dict[str, ExtractedFact]:
     m = re.search(r"\b(?:i|you|user|he|she|they) (?:lives?|resides?|moved to) in\s+(?:a\s+)?(?:\d+-bedroom\s+apartment\s+in\s+)?([A-Z][a-zA-Z .'-]+?)(?:\s+near|\s+with|\s+and|\.|,|;|\s*$)", text, flags=re.IGNORECASE)
     if not m:
         m = re.search(r"\b(?:i|you|user|he|she|they) moved to\s+([A-Z][a-zA-Z .'-]+?)(?:\s+near|\s+with|\s+and|\.|,|;|\s*$)", text, flags=re.IGNORECASE)
+    if not m:
+        # "life in X", "based in X", "living in X", "located in X"
+        # Catches: "life in Miami", "how's life in Austin", "I'm based in NYC"
+        m = re.search(r"\b(?:life|based|living|located|settling|settled)\s+in\s+([A-Z][a-zA-Z .'-]+?)(?:\s+near|\s+with|\s+and|\s+is|\s+has|\.|,|;|\?|!|\s*$)", text, flags=re.IGNORECASE)
     if not m and "employer" in facts:
         # Check for "work at [company] in [location]" pattern
         m = re.search(r"\bworks? (?:at|for)\s+[A-Za-z0-9\s&\-\.]+?\s+in\s+([A-Z][a-zA-Z .'-]+?)(?:\s+near|\s+with|\s+and|\.|,|;|\s*$)", text, flags=re.IGNORECASE)
