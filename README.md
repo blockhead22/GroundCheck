@@ -11,7 +11,7 @@
 
 ## The Problem
 
-Your AI agent says "you work at Amazon." Memory says "Microsoft." Your vector store won't catch this — it just returns the most similar embedding. GroundCheck catches it in <2ms with zero dependencies.
+Your AI agent says "you work at Amazon." Memory says "Microsoft." Most systems won't catch this — they just return the most similar embedding and hope for the best. GroundCheck catches it in <2ms with zero dependencies.
 
 ## Install
 
@@ -41,16 +41,18 @@ print(result.confidence)      # 0.65
 
 ## What Makes This Different
 
-| Feature | GroundCheck | SelfCheckGPT | NLI Models | Instructor verify_extraction |
-|---------|------------|--------------|------------|------------------------------|
-| Multiple sources | ✅ List[Memory] | ❌ Self-sampling | ❌ Premise/hypothesis pair | ❌ Single source string |
-| Trust scores | ✅ Per-memory trust weighting | ❌ | ❌ | ❌ |
-| Contradiction detection | ✅ Cross-memory conflicts | ❌ | Partial | ❌ |
-| Correction generation | ✅ Rewrites hallucinations | ❌ | ❌ | ❌ |
-| Temporal awareness | ✅ most_recent vs most_trusted | ❌ | ❌ | ❌ |
-| Dependencies | **Zero** (stdlib only) | torch, transformers | torch, transformers | rapidfuzz |
-| Latency | **1.17ms mean** | 3,082ms | ~500ms | ~1ms |
-| Extra LLM calls | **Zero** | 3-5 per check | Zero | Zero |
+Other systems treat verification as a binary "is this grounded?" check against a single source. GroundCheck is different:
+
+| | Other systems | GroundCheck |
+|---|---|---|
+| Sources | Single string or premise/hypothesis pair | Multiple memories with per-source trust scores |
+| Trust | All sources treated equally | Trust-weighted — high-trust memories override low-trust |
+| Contradictions | Not detected | Cross-memory conflict detection with resolution |
+| Correction | Flag only — no fix | Auto-rewrites hallucinations with grounded facts |
+| Temporal | No awareness | `most_recent` vs `most_trusted` resolution |
+| Dependencies | Often torch, transformers, etc. | **Zero** (stdlib only) |
+| Latency | 500ms – 3,000ms+ | **1.17ms mean** |
+| Extra LLM calls | Some require 3-5 per check | **Zero** |
 
 ## How It Works
 
@@ -159,7 +161,6 @@ Benchmark: 1,000 verifications
 Mean latency:  1.17ms
 P95 latency:   2.09ms
 P99 latency:   3.41ms
-vs SelfCheckGPT: 2,634x faster
 Memory: ~2MB RSS
 Dependencies: 0
 ```
