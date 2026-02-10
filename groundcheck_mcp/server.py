@@ -105,18 +105,20 @@ def crt_store_fact(
     # Store the new memory
     new_mem = store.store(text=text, thread_id=thread_id, source=source)
 
-    # Get all memories for contradiction check
+    # Get all memories for contradiction check (INCLUDING the new one)
     all_memories = store.get_all(thread_id=thread_id)
     
     # Extract facts from the new text
     new_facts = extract_fact_slots(text)
     
-    # Check for contradictions against existing memories (excluding just-stored)
-    existing = [m for m in all_memories if m.id != new_mem.id]
-    
+    # Detect contradictions across ALL memories (the verifier compares memories
+    # against each other on mutually exclusive slots)
     contradictions = []
-    if existing and new_facts:
-        report = verifier.verify(text, existing, mode="permissive")
+    if len(all_memories) > 1 and new_facts:
+        # Verify combined text against all memories — this triggers
+        # _detect_contradictions which compares memories cross-wise
+        combined = " ".join(m.text for m in all_memories)
+        report = verifier.verify(combined, all_memories, mode="permissive")
         if report.contradiction_details:
             contradictions = [
                 {
