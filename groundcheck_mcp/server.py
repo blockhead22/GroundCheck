@@ -9,23 +9,32 @@ Usage:
 
 import argparse
 import json
-import sys
 import logging
-from typing import Any
+import sys
+from typing import Optional
 
-from mcp.server import Server
-from mcp.server.stdio import run_stdio
-from mcp.types import Tool, TextContent
+from mcp.server import FastMCP
 
-from groundcheck import GroundCheck, Memory, VerificationReport
+from groundcheck import GroundCheck, VerificationReport
 from groundcheck.fact_extractor import extract_fact_slots
 from .storage import MemoryStore
 
 logger = logging.getLogger("groundcheck-mcp")
 
 # Global state
-_store: MemoryStore | None = None
-_verifier: GroundCheck | None = None
+_store: Optional[MemoryStore] = None
+_verifier: Optional[GroundCheck] = None
+
+# Create the FastMCP server
+mcp = FastMCP(
+    "groundcheck",
+    instructions=(
+        "GroundCheck provides trust-weighted memory and hallucination detection. "
+        "Use crt_store_fact when the user states facts. "
+        "Use crt_check_memory before answering questions about the user/project. "
+        "Use crt_verify_output before sending responses that reference stored facts."
+    ),
+)
 
 
 def _get_store() -> MemoryStore:
@@ -73,137 +82,40 @@ def _report_to_dict(report: VerificationReport) -> dict:
     }
 
 
-def create_server() -> Server:
-    """Create and configure the MCP server with GroundCheck tools."""
-    server = Server("groundcheck")
-
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name="crt_store_fact",
-                description=(
-                    "Store a user fact into persistent memory. Returns the stored memory "
-                    "and any contradictions detected against existing memories. "
-                    "Call this whenever the user states something about themselves, "
-                    "their project, preferences, or environment."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "text": {
-                            "type": "string",
-                            "description": "The fact to store (e.g. 'User works at Microsoft')",
-                        },
-                        "source": {
-                            "type": "string",
-                            "enum": ["user", "document", "code", "inferred"],
-                            "description": "Source of the fact. Affects initial trust score.",
-                            "default": "user",
-                        },
-                        "thread_id": {
-                            "type": "string",
-                            "description": "Thread/conversation ID for memory isolation.",
-                            "default": "default",
-                        },
-                    },
-                    "required": ["text"],
-                },
-            ),
-            Tool(
-                name="crt_check_memory",
-                description=(
-                    "Query stored facts before answering. Returns relevant memories "
-                    "with trust scores and any detected contradictions. "
-                    "Call this before answering questions about the user or project."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "What to search for in memory (e.g. 'database technology')",
-                        },
-                        "thread_id": {
-                            "type": "string",
-                            "description": "Thread/conversation ID.",
-                            "default": "default",
-                        },
-                    },
-                    "required": ["query"],
-                },
-            ),
-            Tool(
-                name="crt_verify_output",
-                description=(
-                    "Verify your draft response against stored memories before sending. "
-                    "Returns hallucination list, corrected text, and confidence score. "
-                    "Call this before every response that references user facts."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "draft": {
-                            "type": "string",
-                            "description": "The draft response text to verify.",
-                        },
-                        "thread_id": {
-                            "type": "string",
-                            "description": "Thread/conversation ID.",
-                            "default": "default",
-                        },
-                        "mode": {
-                            "type": "string",
-                            "enum": ["strict", "permissive"],
-                            "description": "strict = rewrite hallucinations; permissive = report only.",
-                            "default": "strict",
-                        },
-                    },
-                    "required": ["draft"],
-                },
-            ),
-        ]
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        store = _get_store()
-        verifier = _get_verifier()
-
-        if name == "crt_store_fact":
-            return await _handle_store_fact(store, verifier, arguments)
-        elif name == "crt_check_memory":
-            return await _handle_check_memory(store, verifier, arguments)
-        elif name == "crt_verify_output":
-            return await _handle_verify_output(store, verifier, arguments)
-        else:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-    return server
-
-
-async def _handle_store_fact(
-    store: MemoryStore, verifier: GroundCheck, args: dict
-) -> list[TextContent]:
-    """Store a fact and check for contradictions against existing memories."""
-    text = args["text"]
-    source = args.get("source", "user")
-    thread_id = args.get("thread_id", "default")
+@mcp.tool()
+def crt_store_fact(
+    text: str,
+    source: str = "user",
+    thread_id: str = "default",
+) -> str:
+    """Store a user fact into persistent memory with contradiction detection.
+    
+    Call this whenever the user states something about themselves,
+    their project, preferences, or environment. Returns the stored 
+    memory and any contradictions detected against existing memories.
+    
+    Args:
+        text: The fact to store (e.g. 'User works at Microsoft')
+        source: Source of the fact — user|document|code|inferred. Affects trust score.
+        thread_id: Thread/conversation ID for memory isolation.
+    """
+    store = _get_store()
+    verifier = _get_verifier()
 
     # Store the new memory
     new_mem = store.store(text=text, thread_id=thread_id, source=source)
 
-    # Check for contradictions against all existing memories
+    # Get all memories for contradiction check
     all_memories = store.get_all(thread_id=thread_id)
     
     # Extract facts from the new text
     new_facts = extract_fact_slots(text)
     
-    # Run verification against existing memories (excluding the one we just stored)
+    # Check for contradictions against existing memories (excluding just-stored)
     existing = [m for m in all_memories if m.id != new_mem.id]
     
     contradictions = []
     if existing and new_facts:
-        # Verify the new fact text against existing memories
         report = verifier.verify(text, existing, mode="permissive")
         if report.contradiction_details:
             contradictions = [
@@ -229,15 +141,25 @@ async def _handle_store_fact(
         "has_contradiction": len(contradictions) > 0,
     }
 
-    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+    return json.dumps(result, indent=2)
 
 
-async def _handle_check_memory(
-    store: MemoryStore, verifier: GroundCheck, args: dict
-) -> list[TextContent]:
-    """Query memories and return them with contradiction warnings."""
-    query = args["query"]
-    thread_id = args.get("thread_id", "default")
+@mcp.tool()
+def crt_check_memory(
+    query: str,
+    thread_id: str = "default",
+) -> str:
+    """Query stored facts before answering. Returns memories with trust scores and contradiction warnings.
+    
+    Call this before answering questions about the user, their project,
+    or their preferences to ensure your response is grounded in stored facts.
+    
+    Args:
+        query: What to search for in memory (e.g. 'database technology', 'employer')
+        thread_id: Thread/conversation ID.
+    """
+    store = _get_store()
+    verifier = _get_verifier()
 
     memories = store.query(query=query, thread_id=thread_id)
 
@@ -248,10 +170,9 @@ async def _handle_check_memory(
             "contradictions": [],
             "note": "No memories stored for this thread yet.",
         }
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
     # Check for internal contradictions among retrieved memories
-    # Use a neutral query to detect cross-memory conflicts
     combined_text = " ".join(m.text for m in memories)
     report = verifier.verify(combined_text, memories, mode="permissive")
 
@@ -277,16 +198,27 @@ async def _handle_check_memory(
         ],
     }
 
-    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+    return json.dumps(result, indent=2)
 
 
-async def _handle_verify_output(
-    store: MemoryStore, verifier: GroundCheck, args: dict
-) -> list[TextContent]:
-    """Verify a draft response against stored memories."""
-    draft = args["draft"]
-    thread_id = args.get("thread_id", "default")
-    mode = args.get("mode", "strict")
+@mcp.tool()
+def crt_verify_output(
+    draft: str,
+    thread_id: str = "default",
+    mode: str = "strict",
+) -> str:
+    """Verify your draft response against stored memories before sending it.
+    
+    Returns hallucination list, corrected text, and confidence score.
+    Call this before every response that references user facts.
+    
+    Args:
+        draft: The draft response text to verify.
+        thread_id: Thread/conversation ID.
+        mode: 'strict' rewrites hallucinations; 'permissive' reports only.
+    """
+    store = _get_store()
+    verifier = _get_verifier()
 
     memories = store.get_all(thread_id=thread_id)
 
@@ -296,12 +228,12 @@ async def _handle_verify_output(
             "note": "No memories to verify against. Passing by default.",
             "confidence": 0.0,
         }
-        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+        return json.dumps(result, indent=2)
 
     report = verifier.verify(draft, memories, mode=mode)
     result = _report_to_dict(report)
 
-    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+    return json.dumps(result, indent=2)
 
 
 def main():
@@ -329,9 +261,8 @@ def main():
     _store = MemoryStore(args.db)
     logger.info(f"GroundCheck MCP server started with db={args.db}")
 
-    server = create_server()
-    import asyncio
-    asyncio.run(run_stdio(server))
+    # Run via stdio (standard for MCP)
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
