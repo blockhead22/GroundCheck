@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "groundcheck"
+version = "0.1.0"
+description = "Trust-weighted hallucination detection for AI agents. Verify LLM outputs against multiple sources with contradiction awareness. Zero dependencies. Sub-2ms."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    {name = "blockhead22"}
+]
+keywords = [
+    "llm",
+    "hallucination",
+    "grounding",
+    "verification",
+    "ai",
+    "memory",
+    "trust",
+    "contradiction",
+    "rag",
+    "fact-checking",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/blockhead22/CRT-GroundCheck-SSE"
+Repository = "https://github.com/blockhead22/CRT-GroundCheck-SSE"
+Issues = "https://github.com/blockhead22/CRT-GroundCheck-SSE/issues"
+Documentation = "https://github.com/blockhead22/CRT-GroundCheck-SSE/tree/main/groundcheck"
+
+[project.optional-dependencies]
+neural = [
+    "sentence-transformers>=2.2.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "build>=1.0.0",
+    "twine>=4.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["groundcheck*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
