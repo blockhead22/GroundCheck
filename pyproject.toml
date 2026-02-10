@@ -39,25 +39,33 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/blockhead22/CRT-GroundCheck-SSE"
-Repository = "https://github.com/blockhead22/CRT-GroundCheck-SSE"
-Issues = "https://github.com/blockhead22/CRT-GroundCheck-SSE/issues"
-Documentation = "https://github.com/blockhead22/CRT-GroundCheck-SSE/tree/main/groundcheck"
+Homepage = "https://github.com/blockhead22/GroundCheck"
+Repository = "https://github.com/blockhead22/GroundCheck"
+Issues = "https://github.com/blockhead22/GroundCheck/issues"
+Documentation = "https://github.com/blockhead22/GroundCheck#api-reference"
+Changelog = "https://github.com/blockhead22/GroundCheck/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 neural = [
     "sentence-transformers>=2.2.0",
+]
+mcp = [
+    "mcp>=1.0.0",
 ]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "build>=1.0.0",
     "twine>=4.0.0",
+    "mcp>=1.0.0",
 ]
+
+[project.scripts]
+groundcheck-mcp = "groundcheck_mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["groundcheck*"]
+include = ["groundcheck*", "groundcheck_mcp*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

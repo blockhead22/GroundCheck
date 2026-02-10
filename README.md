@@ -164,13 +164,38 @@ Memory: ~2MB RSS
 Dependencies: 0
 ```
 
+## MCP Server (Agent Integration)
+
+GroundCheck ships with an MCP server that gives any AI agent (Copilot, Claude, Cursor) persistent fact memory with contradiction detection:
+
+```bash
+pip install groundcheck[mcp]
+groundcheck-mcp --db .groundcheck/memory.db
+```
+
+Add to VS Code's MCP config:
+```json
+{
+  "servers": {
+    "groundcheck": {
+      "command": "groundcheck-mcp",
+      "args": ["--db", ".groundcheck/memory.db"]
+    }
+  }
+}
+```
+
+Tools exposed: `crt_store_fact`, `crt_check_memory`, `crt_verify_output`.
+
 ## Development
 
 ```bash
-git clone https://github.com/blockhead22/CRT-GroundCheck-SSE.git
-cd CRT-GroundCheck-SSE/groundcheck
+git clone https://github.com/blockhead22/GroundCheck.git
+cd GroundCheck
+python -m venv .venv
+.venv\Scripts\activate  # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/ -v
+pytest
 ```
 
 ## License
