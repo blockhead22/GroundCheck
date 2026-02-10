@@ -149,12 +149,9 @@ def extract_fact_slots(text: str) -> Dict[str, ExtractedFact]:
     if structured:
         slot = structured.group(1).strip().lower()
         value_raw = structured.group(2).strip()
-        # Keep this conservative: whitelist the slots we intentionally support.
-        allowed = {
-            "name", "employer", "title", "location", "pronouns",
-            "communication_style", "goals", "favorite_color",
-        }
-        if slot in allowed and value_raw:
+        # Accept any well-formed slot name (alphanumeric + underscores).
+        # The structured FACT: format is an explicit declaration — trust it.
+        if slot and value_raw:
             facts[slot] = ExtractedFact(slot, value_raw, _norm_text(value_raw))
             return facts
 
@@ -390,6 +387,14 @@ def extract_fact_slots(text: str) -> Dict[str, ExtractedFact]:
     _extract_personal_facts(text, facts)
     _extract_professional_facts(text, facts)
 
+    # General-purpose extraction — catches facts beyond the profile-specific
+    # patterns above.  These run last so specific extractors take priority.
+    _extract_age_and_date_facts(text, facts)
+    _extract_quantitative_facts(text, facts)
+    _extract_preference_and_opinion_facts(text, facts)
+    _extract_technical_facts(text, facts)
+    _extract_general_knowledge_facts(text, facts)
+
     return facts
 
 
@@ -610,3 +615,446 @@ def _extract_professional_facts(text: str, facts: Dict[str, ExtractedFact]) -> N
     if m:
         skill_str = m.group(1).strip()
         facts["skill"] = ExtractedFact("skill", skill_str, _norm_text(skill_str))
+
+
+# ---------------------------------------------------------------------------
+# General-purpose extraction functions
+# ---------------------------------------------------------------------------
+
+_WORD_TO_NUM = {
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+    "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14",
+    "fifteen": "15", "sixteen": "16", "seventeen": "17", "eighteen": "18",
+    "nineteen": "19", "twenty": "20", "thirty": "30", "forty": "40",
+    "fifty": "50", "sixty": "60", "seventy": "70", "eighty": "80",
+    "ninety": "90", "hundred": "100", "zero": "0",
+}
+
+
+def _extract_age_and_date_facts(text: str, facts: dict) -> None:
+    """Extract age, birthday, and date-related facts."""
+
+    # Age: "I'm 32", "I am 32 years old", "my age is 32", "age: 32"
+    # Also second/third person: "You are 32", "User is 45 years old"
+    if "age" not in facts:
+        m = re.search(
+            r"\b(?:i'?m|i am|you are|you're|he is|she is|they are|user is|my age is|age[:\s]+is?)\s+(\d{1,3})\s*(?:years?\s*old)?(?:\b|$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            age = m.group(1)
+            facts["age"] = ExtractedFact("age", age, age)
+
+    # Birthday: "my birthday is March 15", "born on Jan 5 1990",
+    # "DOB is 1990-01-15", "date of birth: March 15"
+    if "birthday" not in facts:
+        m = re.search(
+            r"\b(?:my birthday is|born on|date of birth[:\s]+is?|dob[:\s]+is?)\s+"
+            r"([A-Za-z0-9,\s/-]{4,30}?)(?:\.|;|\s+and|\s+in\s+[A-Z]|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            bday = m.group(1).strip().rstrip(",")
+            facts["birthday"] = ExtractedFact("birthday", bday, _norm_text(bday))
+
+    # Birth year standalone: "I was born in 1992"
+    if "birth_year" not in facts:
+        m = re.search(r"\b(?:i was born|born)\s+in\s+(19\d{2}|20[0-2]\d)\b", text, flags=re.IGNORECASE)
+        if m:
+            year = m.group(1)
+            facts["birth_year"] = ExtractedFact("birth_year", year, year)
+
+    # Anniversary: "our anniversary is June 1", "married since 2015"
+    if "anniversary" not in facts:
+        m = re.search(
+            r"\b(?:our anniversary is|anniversary[:\s]+is?|married since|married in)\s+"
+            r"([A-Za-z0-9,\s/-]{3,30}?)(?:\.|;|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            ann = m.group(1).strip().rstrip(",")
+            facts["anniversary"] = ExtractedFact("anniversary", ann, _norm_text(ann))
+
+    # Generic start/end dates: "started [the job/project/X] in YYYY"
+    if "start_date" not in facts:
+        m = re.search(
+            r"\b(?:i |we )?(?:started|joined|began|commenced)\s+(?:the\s+)?(?:\w+\s+)?in\s+"
+            r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|(?:19|20)\d{2})\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            sd = m.group(1).strip()
+            facts["start_date"] = ExtractedFact("start_date", sd, _norm_text(sd))
+
+    if "end_date" not in facts:
+        m = re.search(
+            r"\b(?:deadline|due date|end date|expires?|expir(?:es|ation)|ends)\s+(?:is\s+|on\s+|:?\s*)"
+            r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,?\s*\d{4})?|"
+            r"\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            ed = m.group(1).strip()
+            facts["end_date"] = ExtractedFact("end_date", ed, _norm_text(ed))
+
+    # Duration: "been doing X for N years/months"
+    if "duration" not in facts:
+        m = re.search(
+            r"\b(?:i'?ve been|been|i have been)\s+\w+(?:\s+\w+)?\s+for\s+"
+            r"(\d{1,3})\s+(years?|months?|weeks?|days?)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            dur = f"{m.group(1)} {m.group(2)}"
+            facts["duration"] = ExtractedFact("duration", dur, _norm_text(dur))
+
+
+def _extract_quantitative_facts(text: str, facts: dict) -> None:
+    """Extract general quantitative facts: salary, budget, measurements, counts."""
+
+    # Salary / income: "$150k", "salary is $200,000", "I make $80k/year"
+    if "salary" not in facts:
+        m = re.search(
+            r"\b(?:salary|income|pay|compensation|wage|i make|i earn)\s*(?:is|:|of)?\s*"
+            r"[\$€£]?\s*(\d[\d,]*\.?\d*)\s*[kK]?(?:\s*(?:/\s*(?:year|yr|month|mo|hour|hr|annum))|"
+            r"\s*(?:per|a)\s*(?:year|month|hour))?\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            sal = m.group(0).strip()
+            # Normalize: extract ust the number portion
+            val = re.search(r"[\$€£]?\s*\d[\d,]*\.?\d*\s*[kK]?", sal)
+            if val:
+                facts["salary"] = ExtractedFact("salary", val.group(0).strip(), _norm_text(val.group(0).strip()))
+
+    # Budget: "budget is $50,000"
+    if "budget" not in facts:
+        m = re.search(
+            r"\bbudget\s*(?:is|:)\s*([\$€£]?\s*\d[\d,]*\.?\d*\s*[kKmMbB]?)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            budget = m.group(1).strip()
+            facts["budget"] = ExtractedFact("budget", budget, _norm_text(budget))
+
+    # Height: "5'11", "5 feet 11 inches", "180 cm", "height is X"
+    if "height" not in facts:
+        m = re.search(r"\b(?:height\s*(?:is|:)\s*|i'?m\s+)(\d{1,2}'\d{1,2}\"?|\d{1,3}\s*(?:cm|ft|feet|inches?))\b", text, flags=re.IGNORECASE)
+        if not m:
+            m = re.search(r"\b(\d)'(\d{1,2})\"?\s*(?:tall)?\b", text)
+        if m:
+            height = m.group(0).strip()
+            facts["height"] = ExtractedFact("height", height, _norm_text(height))
+
+    # Weight: "180 lbs", "82 kg", "weigh 180"
+    if "weight" not in facts:
+        m = re.search(
+            r"\b(?:weight\s*(?:is|:)\s*|i?\s*weigh\s+)(\d{2,3})\s*(lbs?|kg|kilos?|pounds?|stone)?\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            weight = f"{m.group(1)} {m.group(2) or 'lbs'}".strip()
+            facts["weight"] = ExtractedFact("weight", weight, _norm_text(weight))
+
+    # Generalized count: "I have N Xs" (for things beyond siblings/children)
+    # Catches: "I have 3 monitors", "I have two dogs", "we have 5 servers"
+    if True:
+        for m in re.finditer(
+            r"\b(?:i|we)\s+have\s+(\d{1,4}|"
+            + "|".join(_WORD_TO_NUM.keys())
+            + r")\s+([a-z][a-z\s]{1,30}?)(?:\s+(?:and|but|in|on|at|that|which|running)|\.|,|;|\s*$)",
+            text, flags=re.IGNORECASE,
+        ):
+            count_raw = m.group(1).strip()
+            thing = m.group(2).strip()
+            count_val = _WORD_TO_NUM.get(count_raw.lower(), count_raw)
+            # Skip if already captured by specific extractors
+            if thing.rstrip("s") in ("sibling", "child", "children", "kid", "language"):
+                continue
+            # Derive a reasonable slot name
+            slot = re.sub(r"\s+", "_", thing.rstrip("s").strip())
+            slot = re.sub(r"[^a-z0-9_]", "", slot.lower())
+            if slot and slot not in facts:
+                val_str = f"{count_val} {thing}"
+                facts[slot] = ExtractedFact(slot, val_str, _norm_text(val_str))
+
+
+def _extract_preference_and_opinion_facts(text: str, facts: dict) -> None:
+    """Extract preferences, opinions, goals, and beliefs."""
+
+    # General "my favorite X is Y" — catches movie, food, sport, team, band, etc.
+    for m in re.finditer(
+        r"\bmy\s+favou?rite\s+([a-z][a-z\s]{0,20}?)\s+is\s+([^\n\r\.;,!\?]{2,60})",
+        text, flags=re.IGNORECASE,
+    ):
+        subject = m.group(1).strip()
+        value = m.group(2).strip()
+        # Trim trailing conjunctions
+        value = re.split(r"\b(?:and|but|though|however|because)\b", value, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        slot = "favorite_" + re.sub(r"\s+", "_", subject.lower())
+        slot = re.sub(r"[^a-z0-9_]", "", slot)
+        if slot not in facts and value:
+            facts[slot] = ExtractedFact(slot, value, _norm_text(value))
+
+    # "I prefer X" / "I prefer X over Y"
+    if "preference" not in facts:
+        m = re.search(
+            r"\bi prefer\s+([^\n\r\.;!\?]{2,60}?)(?:\s+over\s+([^\n\r\.;!\?]{2,60}))?"
+            r"(?:\.|;|!|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            preferred = m.group(1).strip()
+            # Skip if already captured as coffee preference
+            if "roast" not in preferred.lower():
+                over = m.group(2)
+                val = preferred + (f" over {over.strip()}" if over else "")
+                facts["preference"] = ExtractedFact("preference", val, _norm_text(val))
+
+    # Opinions: "I think X", "I believe X", "in my opinion X"
+    if "opinion" not in facts:
+        m = re.search(
+            r"\b(?:i think|i believe|in my opinion|i feel that|my view is)\s+"
+            r"([^\n\r\.;!\?]{5,120}?)(?:\.|;|!|\?|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            opinion = m.group(1).strip()
+            facts["opinion"] = ExtractedFact("opinion", opinion, _norm_text(opinion))
+
+    # Goals / plans: "my goal is X", "I plan to X", "I'm trying to X"
+    if "goal" not in facts:
+        m = re.search(
+            r"\b(?:my goal is|i(?:'m| am) (?:trying|planning|working|aiming) to|"
+            r"i plan to|i want to|my plan is to|i aim to|working towards?)\s+"
+            r"([^\n\r\.;!\?]{3,120}?)(?:\.|;|!|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            goal = m.group(1).strip()
+            facts["goal"] = ExtractedFact("goal", goal, _norm_text(goal))
+
+    # Dislikes / avoidances: "I don't like X", "I hate X", "I avoid X"
+    if "dislike" not in facts:
+        m = re.search(
+            r"\b(?:i (?:don'?t|do not) like|i hate|i avoid|i can'?t stand|"
+            r"i'm allergic to|allergic to|i'?m intolerant to)\s+"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            dislike = m.group(1).strip()
+            facts["dislike"] = ExtractedFact("dislike", dislike, _norm_text(dislike))
+
+    # Dietary restriction: "I'm vegan", "I'm vegetarian", "I eat halal", "I'm gluten-free"
+    if "diet" not in facts:
+        m = re.search(
+            r"\b(?:i'?m|i am|i eat)\s+(vegan|vegetarian|pescatarian|keto|paleo|"
+            r"halal|kosher|gluten[- ]?free|dairy[- ]?free|lactose[- ]?free)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            diet = m.group(1).strip()
+            facts["diet"] = ExtractedFact("diet", diet, _norm_text(diet))
+
+
+def _extract_technical_facts(text: str, facts: dict) -> None:
+    """Extract technical/programming/infrastructure facts."""
+
+    # Technology versions: "using Python 3.11", "Node 18", "React 18.2.0",
+    # "running Java 21", "on Ruby 3.2"
+    _tech_names = (
+        r"(?:Python|Java|JavaScript|TypeScript|Node(?:\.?js)?|Ruby|Go|Rust|"
+        r"C\+\+|C#|Swift|Kotlin|PHP|Perl|Scala|Elixir|Dart|R|Julia|"
+        r"React|Angular|Vue|Svelte|Next\.?js|Django|Flask|FastAPI|"
+        r"Spring\s?Boot|Rails|Laravel|Express|NestJS|"
+        r"PostgreSQL|MySQL|MongoDB|Redis|SQLite|DynamoDB|"
+        r"Docker|Kubernetes|Terraform|Ansible|"
+        r"Ubuntu|Debian|CentOS|Fedora|macOS|Windows|Linux|"
+        r"AWS|GCP|Azure|Vercel|Netlify|Heroku|"
+        r"Nginx|Apache|Caddy|HAProxy|"
+        r"Git|GitHub|GitLab|Bitbucket|"
+        r"VS\s?Code|Vim|Neovim|Emacs|IntelliJ|PyCharm|WebStorm)"
+    )
+
+    # Versioned technology: "Python 3.11.4", "Node 18", "React 18.2"
+    for m in re.finditer(
+        r"\b" + _tech_names + r"\s+v?(\d+(?:\.\d+){0,3})\b",
+        text, flags=re.IGNORECASE,
+    ):
+        tech = m.group(0).strip()
+        # Normalize the tech name (strip version for slot name)
+        tech_name = re.sub(r"\s+v?\d+(?:\.\d+){0,3}$", "", tech).strip()
+        slot = re.sub(r"[\s.#+]+", "_", tech_name.lower()) + "_version"
+        slot = re.sub(r"[^a-z0-9_]", "", slot)
+        if slot not in facts:
+            version = m.group(1) if m.lastindex and m.lastindex >= 1 else tech
+            facts[slot] = ExtractedFact(slot, tech, _norm_text(tech))
+
+    # Database: "our database is X", "using X as our db", "db is X"
+    if "database" not in facts:
+        m = re.search(
+            r"\b(?:our )?(?:database|db)\s+(?:is|:)\s+([A-Z][A-Za-z0-9\s+#]{1,30}?)(?:\.|,|;|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if not m:
+            m = re.search(
+                r"\busing\s+(PostgreSQL|MySQL|MongoDB|Redis|SQLite|"
+                r"DynamoDB|Cassandra|CouchDB|Neo4j|MariaDB|Oracle|"
+                r"SQL Server|Supabase|Firebase|ElasticSearch|ClickHouse)\b",
+                text, flags=re.IGNORECASE,
+            )
+        if m:
+            db = m.group(1).strip()
+            facts["database"] = ExtractedFact("database", db, _norm_text(db))
+
+    # Operating system: "running Ubuntu", "on macOS", "I use Windows 11"
+    if "os" not in facts:
+        m = re.search(
+            r"\b(?:running|on|i use|using|my (?:os|operating system) is)\s+"
+            r"(Ubuntu\s*\d*\.?\d*|Debian\s*\d*|CentOS\s*\d*|Fedora\s*\d*|"
+            r"Arch(?:\s*Linux)?|macOS(?:\s*\w+)?|Windows\s*\d*|Linux\s*\w*)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            os_val = m.group(1).strip()
+            facts["os"] = ExtractedFact("os", os_val, _norm_text(os_val))
+
+    # Editor / IDE: "my editor is X", "I use VS Code"
+    if "editor" not in facts:
+        m = re.search(
+            r"\b(?:my (?:editor|ide) is|i (?:use|prefer))\s+"
+            r"(VS\s?Code|Visual Studio(?:\s+Code)?|Vim|Neovim|Emacs|"
+            r"IntelliJ(?:\s+IDEA)?|PyCharm|WebStorm|Sublime(?:\s+Text)?|"
+            r"Atom|Cursor|Zed|Helix|Nano)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            editor = m.group(1).strip()
+            facts["editor"] = ExtractedFact("editor", editor, _norm_text(editor))
+
+    # Framework / stack: "built with React", "our stack is X", "using Django"
+    if "framework" not in facts:
+        m = re.search(
+            r"\b(?:built with|framework is|stack is|using)\s+"
+            r"(React|Angular|Vue(?:\.?js)?|Svelte|Next\.?js|Nuxt|Remix|Astro|"
+            r"Django|Flask|FastAPI|Express(?:\.?js)?|NestJS|Rails|Laravel|"
+            r"Spring\s?Boot|ASP\.NET|Phoenix|Gin|Fiber|Actix|Rocket)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            fw = m.group(1).strip()
+            facts["framework"] = ExtractedFact("framework", fw, _norm_text(fw))
+
+    # Cloud provider: "deployed on AWS", "hosted on GCP", "running on Azure"
+    if "cloud" not in facts:
+        m = re.search(
+            r"\b(?:deployed on|hosted on|running on|using|on)\s+"
+            r"(AWS|GCP|Google\s+Cloud|Azure|Vercel|Netlify|Heroku|"
+            r"DigitalOcean|Linode|Fly\.io|Railway|Render)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            cloud = m.group(1).strip()
+            facts["cloud"] = ExtractedFact("cloud", cloud, _norm_text(cloud))
+
+    # Configuration values: "port is 8080", "timeout is 30s", "max retries is 3"
+    for m in re.finditer(
+        r"\b(port|timeout|max[_\s]?retries|rate[_\s]?limit|"
+        r"batch[_\s]?size|workers?|threads?|ttl|interval|threshold|"
+        r"concurrency|buffer[_\s]?size|max[_\s]?connections)\s+"
+        r"(?:is|=|:)\s*(\d[\d.,]*\s*(?:s|ms|sec|seconds?|min|minutes?|hrs?|hours?|mb|gb|kb)?)\b",
+        text, flags=re.IGNORECASE,
+    ):
+        config_key = re.sub(r"\s+", "_", m.group(1).strip().lower())
+        config_val = m.group(2).strip()
+        if config_key not in facts:
+            facts[config_key] = ExtractedFact(config_key, config_val, _norm_text(config_val))
+
+    # API URL / endpoint: "the API is at X", "endpoint is X", "API URL: X"
+    if "api_url" not in facts:
+        m = re.search(
+            r"\b(?:api|endpoint|url|base[_\s]?url|server)\s+(?:is\s+(?:at\s+)?|(?:url\s+)?(?:is|:)\s*|at\s+)"
+            r"(https?://[^\s,;\"'<>]{5,120})",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            url = m.group(1).strip()
+            facts["api_url"] = ExtractedFact("api_url", url, _norm_text(url))
+
+
+def _extract_general_knowledge_facts(text: str, facts: dict) -> None:
+    """Catch-all extraction for 'my/the/our X is Y' patterns.
+
+    This runs last and only fires for slots not already claimed by the
+    more specific extractors above.  It is intentionally conservative —
+    the subject must be 1-3 words and the value must look substantive.
+    """
+
+    # Blocklist: subjects that are too generic or cause false positives
+    _SUBJECT_BLOCKLIST = {
+        "thing", "stuff", "problem", "issue", "point", "question", "answer",
+        "fact", "truth", "reason", "way", "idea", "plan", "goal",
+        "it", "this", "that", "he", "she", "they", "we", "you",
+        "name", "age", "job", "role",  # Already handled by specific extractors
+        "api", "endpoint", "url", "server",  # Handled by technical extractor
+    }
+
+    # Pattern: "my/the/our X is Y"
+    for m in re.finditer(
+        r"\b(?:my|the|our|his|her|their)\s+"
+        r"([a-z][a-z\s']{0,30}?)\s+(?:is|are|was|were)\s+"
+        r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+        text, flags=re.IGNORECASE,
+    ):
+        subject = m.group(1).strip()
+        value = m.group(2).strip()
+
+        # Normalize slot name
+        slot = re.sub(r"['\s]+", "_", subject.lower()).strip("_")
+        slot = re.sub(r"[^a-z0-9_]", "", slot)
+
+        if not slot or not value:
+            continue
+        if slot in facts:
+            continue
+        if slot in _SUBJECT_BLOCKLIST or len(slot) < 2:
+            continue
+        # Reject if value starts with a common continuation word (likely not a fact)
+        if re.match(r"^(?:that|not|also|just|still|always|never|really|very)\b", value, re.IGNORECASE):
+            continue
+        # Reject single-char values
+        if len(value.strip()) < 2:
+            continue
+
+        # Trim trailing conjunctions
+        value = re.split(r"\b(?:and|but|so|though|because|however|which)\b", value, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        if value:
+            facts[slot] = ExtractedFact(slot, value, _norm_text(value))
+
+    # Pattern: "X is set to Y" / "X is configured as Y" / "X is currently Y"
+    for m in re.finditer(
+        r"\b([a-z][a-z_\s]{1,25}?)\s+is\s+(?:set to|configured (?:as|to)|currently)\s+"
+        r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
+        text, flags=re.IGNORECASE,
+    ):
+        subject = m.group(1).strip()
+        value = m.group(2).strip()
+        slot = re.sub(r"['\s]+", "_", subject.lower()).strip("_")
+        slot = re.sub(r"[^a-z0-9_]", "", slot)
+        if slot and value and slot not in facts and len(slot) >= 2:
+            facts[slot] = ExtractedFact(slot, value, _norm_text(value))
+
+    # Pattern: "X equals Y" / "X = Y" (informal equality)
+    for m in re.finditer(
+        r"\b([a-z][a-z_\s]{1,25}?)\s+(?:equals?|==?)\s+"
+        r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
+        text, flags=re.IGNORECASE,
+    ):
+        subject = m.group(1).strip()
+        value = m.group(2).strip()
+        slot = re.sub(r"['\s]+", "_", subject.lower()).strip("_")
+        slot = re.sub(r"[^a-z0-9_]", "", slot)
+        if slot and value and slot not in facts and len(slot) >= 2:
+            facts[slot] = ExtractedFact(slot, value, _norm_text(value))

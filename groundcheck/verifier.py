@@ -36,6 +36,7 @@ class GroundCheck:
     # Fact slots where multiple values are contradictory (mutually exclusive)
     # vs. slots where multiple values are additive (complementary)
     MUTUALLY_EXCLUSIVE_SLOTS = {
+        # Personal profile
         'employer',      # Can only work at one place at a time
         'location',      # Can only live in one place at a time  
         'name',          # Person has one name
@@ -51,6 +52,24 @@ class GroundCheck:
         'masters_school',
         'graduation_year', # One graduation year
         'project',       # Current project
+        # Demographics & biometrics
+        'age',
+        'birthday',
+        'birth_year',
+        'height',
+        'weight',
+        'diet',
+        'relationship',
+        # Financial
+        'salary',
+        'budget',
+        # Technical / infrastructure (current state)
+        'database',
+        'os',
+        'editor',
+        'framework',
+        'cloud',
+        'api_url',
     }
     
     # Trust difference threshold: if trust scores differ by more than this,
@@ -522,6 +541,7 @@ class GroundCheck:
         # Parse supported facts from memories
         memory_facts_by_slot: Dict[str, Set[str]] = {}
         memory_id_by_slot_value: Dict[str, Dict[str, str]] = {}
+        memory_trust_by_id: Dict[str, float] = {m.id: m.trust for m in retrieved_memories}
         
         for memory in retrieved_memories:
             # Try parsing structured FACT: format
@@ -577,18 +597,40 @@ class GroundCheck:
                         supported_values,
                         memory_id_by_slot_value.get(support_slot, {}),
                     )
-                    if memory_id:
-                        grounding_map[val] = memory_id
                     
-                    # Step 2: Check if this claim involves a contradiction
+                    # Trust-weighted grounding: if this value is supported by a
+                    # low-trust memory but a *different* value for the same slot
+                    # exists in a much higher-trust memory, reject the grounding.
+                    # This prevents a 0.3-trust "Java" from being accepted when a
+                    # 0.95-trust "Python" exists for the same slot.
+                    supporting_trust = memory_trust_by_id.get(memory_id, 1.0) if memory_id else 1.0
                     slot_contradiction = next(
                         (c for c in contradictions if c.slot == support_slot),
                         None
                     )
                     
+                    trust_overridden = False
                     if slot_contradiction and val_norm in slot_contradiction.values:
-                        # This claim uses a contradicted fact
-                        contradicted_claims.append(val)
+                        # Find the highest trust among *other* values for this slot
+                        for other_val, other_mid in memory_id_by_slot_value.get(support_slot, {}).items():
+                            if other_val != val_norm:
+                                other_trust = memory_trust_by_id.get(other_mid, 1.0)
+                                trust_gap = other_trust - supporting_trust
+                                if trust_gap >= self.TRUST_DIFFERENCE_THRESHOLD:
+                                    # A much more trusted memory contradicts this value
+                                    # Treat the claim as a hallucination
+                                    hallucinations.append(val)
+                                    all_supported = False
+                                    trust_overridden = True
+                                    break
+                    
+                    if not trust_overridden:
+                        if memory_id:
+                            grounding_map[val] = memory_id
+                        
+                        if slot_contradiction and val_norm in slot_contradiction.values:
+                            # This claim uses a contradicted fact
+                            contradicted_claims.append(val)
                 else:
                     # This value is not supported - it's a hallucination
                     hallucinations.append(val)
