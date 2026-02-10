@@ -34,3 +34,23 @@ jobs:
           r = v.verify('test', [Memory(id='m1', text='test')])
           print(f'GroundCheck {groundcheck.__version__} OK')
           "
+
+  test-neural:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install package with neural deps
+        run: pip install -e ".[dev,neural]"
+      
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-models-${{ hashFiles('groundcheck/neural_extractor.py') }}
+      
+      - name: Run neural tests
+        run: pytest tests/test_neural_extraction.py tests/test_semantic_matcher.py -v --tb=short

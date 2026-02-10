@@ -3,6 +3,7 @@
 **Trust-weighted hallucination detection for AI agents. Zero dependencies. Sub-2ms.**
 
 [![PyPI version](https://badge.fury.io/py/groundcheck.svg)](https://pypi.org/project/groundcheck/)
+[![CI](https://github.com/blockhead22/GroundCheck/actions/workflows/groundcheck-test.yml/badge.svg)](https://github.com/blockhead22/GroundCheck/actions/workflows/groundcheck-test.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)]()
@@ -58,8 +59,8 @@ Other systems treat verification as a binary "is this grounded?" check against a
 
 ```
 Generated text + Retrieved memories (with trust scores)
-    → Extract fact claims (slot-based: name, employer, location, ...)
-    → Detect contradictions across memories
+    → Extract fact claims (universal: any domain, any structure)
+    → Detect contradictions across memories (dynamic slot tracking)
     → Build grounding map (fuzzy match claims to memories)
     → Check disclosure requirements (trust-weighted)
     → Calculate confidence score
@@ -96,16 +97,23 @@ result = verifier.verify("You live in Paris", memories, mode="permissive")
 print(result.corrected)  # None — permissive doesn't rewrite
 ```
 
-## Supported Fact Slots
+## Universal Fact Extraction
 
-15+ built-in slot types with mutual exclusivity knowledge:
+GroundCheck v0.2 extracts facts from **any domain** — not just personal profiles. Nine pattern families cover:
 
-`name`, `employer`, `location`, `title`, `occupation`, `age`, `school`,
-`degree`, `favorite_color`, `coffee`, `hobby`, `pet`, `project`,
-`graduation_year`, `programming_experience`, and more.
+| Pattern | Example |
+|---|---|
+| Copular (`X is Y`) | "The server is running Ubuntu 22.04" |
+| Possessive (`X has Y`) | "Python has garbage collection" |
+| Non-copular verbs | "Tesla manufactures electric vehicles" |
+| Clause splitting | "Bob is 30, lives in NYC, and works at Google" |
+| Decisions & plans | "We chose Postgres" / "They decided to use Rust" |
+| Requirements | "The app requires Node 18+" |
+| Prescriptive | "Always use HTTPS for API calls" |
+| Numeric | "The latency is 3.5ms" / "Revenue: $4.2 billion" |
+| Named slots | `name`, `employer`, `location`, `age`, `hobby`, etc. |
 
-GroundCheck knows that a person can only have one employer at a time, but can have
-multiple hobbies. This built-in domain knowledge prevents false positives.
+35+ known exclusive slots with mutual exclusivity knowledge (a person has one employer but many hobbies). **All extracted slots** are tracked for contradictions — including dynamically discovered ones.
 
 ## Neural Mode (Optional)
 
@@ -132,6 +140,10 @@ result = verifier.verify("Employed by Google", memories)  # Matches "works at Go
 - `verify(generated_text, retrieved_memories, mode="strict")` → `VerificationReport`
 - `extract_claims(text)` → `Dict[str, ExtractedFact]`
 - `find_support(claim, memories)` → match info
+
+### `extract_fact_slots(text)` (standalone function)
+Universal fact extractor — works on any domain text, not just personal facts.
+Returns `Dict[str, ExtractedFact]` with dynamically discovered slot names.
 
 ### `VerificationReport`
 - `passed: bool` — did verification pass?

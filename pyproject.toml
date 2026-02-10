@@ -48,6 +48,7 @@ Changelog = "https://github.com/blockhead22/GroundCheck/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 neural = [
     "sentence-transformers>=2.2.0",
+    "transformers>=4.20.0",
 ]
 mcp = [
     "mcp>=1.0.0",
