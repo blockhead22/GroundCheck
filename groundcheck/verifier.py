@@ -33,9 +33,12 @@ class GroundCheck:
         >>> print(result.hallucinations)  # ["Amazon"]
     """
     
-    # Fact slots where multiple values are contradictory (mutually exclusive)
-    # vs. slots where multiple values are additive (complementary)
-    MUTUALLY_EXCLUSIVE_SLOTS = {
+    # Fact slots where multiple values are DEFINITELY contradictory.
+    # These are "known exclusive" — only one value can be true at a time.
+    # Any dynamically-extracted slot NOT in this set is ALSO checked for
+    # contradictions (see _detect_contradictions), just with slightly
+    # lower priority in reporting.
+    KNOWN_EXCLUSIVE_SLOTS = {
         # Personal profile
         'employer',      # Can only work at one place at a time
         'location',      # Can only live in one place at a time  
@@ -70,6 +73,16 @@ class GroundCheck:
         'framework',
         'cloud',
         'api_url',
+    }
+
+    # Backward compatibility alias
+    MUTUALLY_EXCLUSIVE_SLOTS = KNOWN_EXCLUSIVE_SLOTS
+
+    # Slots where multiple values are explicitly ADDITIVE (not contradictions)
+    ADDITIVE_SLOTS = {
+        'hobby', 'skill', 'language', 'tool', 'library',
+        'dependency', 'feature', 'requirement',
+        'programming_language',  # People can know multiple languages
     }
     
     # Trust difference threshold: if trust scores differ by more than this,
@@ -322,26 +335,23 @@ class GroundCheck:
                 try:
                     result = self.two_tier_system.extract_facts(memory.text, skip_llm=True)
                     
-                    # Process hard facts (Tier A)
+                    # Process hard facts (Tier A) — ALL slots, not just known-exclusive
                     for slot, fact in result.hard_facts.items():
-                        if slot in self.MUTUALLY_EXCLUSIVE_SLOTS:
-                            _add_fact(slot, fact.normalized, memory, tier='hard')
+                        _add_fact(slot, fact.normalized, memory, tier='hard')
                     
                     # Process open tuples (Tier B) with high confidence
                     for tuple_fact in result.open_tuples:
                         if tuple_fact.confidence >= 0.7:  # Only high-confidence tuples
-                            # Check if attribute is mutually exclusive
                             attr = tuple_fact.attribute
-                            if attr in self.MUTUALLY_EXCLUSIVE_SLOTS:
-                                # Safely get normalized_value with fallback to value
-                                normalized = getattr(tuple_fact, 'normalized_value', None) or tuple_fact.value
-                                _add_fact(
-                                    attr,
-                                    normalized,
-                                    memory,
-                                    tier='open',
-                                    confidence=float(tuple_fact.confidence),
-                                )
+                            # Safely get normalized_value with fallback to value
+                            normalized = getattr(tuple_fact, 'normalized_value', None) or tuple_fact.value
+                            _add_fact(
+                                attr,
+                                normalized,
+                                memory,
+                                tier='open',
+                                confidence=float(tuple_fact.confidence),
+                            )
                 except Exception as e:
                     # Fall back to regex-only extraction
                     import logging
@@ -352,13 +362,16 @@ class GroundCheck:
             # Also use traditional regex extraction (for backward compatibility)
             facts = extract_fact_slots(memory.text)
             for slot, fact in facts.items():
-                # Only track mutually exclusive slots for contradiction detection
-                if slot in self.MUTUALLY_EXCLUSIVE_SLOTS:
-                    _add_fact(slot, fact.normalized, memory, tier='regex')
+                # Track ALL extracted slots — dynamic contradiction detection
+                _add_fact(slot, fact.normalized, memory, tier='regex')
         
         # Find slots with multiple different values
         contradictions = []
         for slot, facts in slot_to_facts.items():
+            # Skip explicitly additive slots
+            if slot in self.ADDITIVE_SLOTS:
+                continue
+
             # Get unique values (normalized)
             unique_values = set(f['value'] for f in facts)
             

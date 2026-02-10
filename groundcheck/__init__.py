@@ -14,7 +14,7 @@ Example:
     >>> print(result.hallucinations)  # ["Amazon"]
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 from .types import Memory, VerificationReport, ExtractedFact, ContradictionDetail
 from .verifier import GroundCheck

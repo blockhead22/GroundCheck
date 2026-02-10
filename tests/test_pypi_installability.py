@@ -21,7 +21,7 @@ def test_version_exists():
     """Package must expose a valid __version__."""
     import groundcheck
     assert hasattr(groundcheck, '__version__')
-    assert groundcheck.__version__ == "0.1.0"
+    assert groundcheck.__version__ == "0.2.0"
 
 
 def test_core_exports():
