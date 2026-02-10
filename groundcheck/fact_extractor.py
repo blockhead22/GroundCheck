@@ -985,76 +985,154 @@ def _extract_technical_facts(text: str, facts: dict) -> None:
 
 
 def _extract_general_knowledge_facts(text: str, facts: dict) -> None:
-    """Catch-all extraction for 'my/the/our X is Y' patterns.
+    """Universal catch-all extraction for declarative claims.
 
     This runs last and only fires for slots not already claimed by the
-    more specific extractors above.  It is intentionally conservative —
-    the subject must be 1-3 words and the value must look substantive.
+    more specific extractors above.  It handles:
+
+    1. "my/the/our X is Y" (possessive/article + copular verb)
+    2. "X is Y" (bare subject + copular verb)
+    3. "X uses/handles/supports/runs Y" (subject + action verb)
+    4. "X requires/needs/must have Y" (requirements/constraints)
+    5. "We agreed/decided to X" (decisions)
+    6. "X should be/must be/needs to be Y" (prescriptive config)
+    7. "X is set to Y" / "X equals Y" (configuration)
+
+    Clause splitting: sentences with commas/semicolons are split and
+    each clause is re-parsed to avoid losing secondary facts.
     """
 
     # Blocklist: subjects that are too generic or cause false positives
     _SUBJECT_BLOCKLIST = {
         "thing", "stuff", "problem", "issue", "point", "question", "answer",
-        "fact", "truth", "reason", "way", "idea", "plan", "goal",
+        "fact", "truth", "reason", "way", "idea",
         "it", "this", "that", "he", "she", "they", "we", "you",
         "name", "age", "job", "role",  # Already handled by specific extractors
-        "api", "endpoint", "url", "server",  # Handled by technical extractor
     }
 
-    # Pattern: "my/the/our X is Y"
-    for m in re.finditer(
-        r"\b(?:my|the|our|his|her|their)\s+"
-        r"([a-z][a-z\s']{0,30}?)\s+(?:is|are|was|were)\s+"
-        r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
-        text, flags=re.IGNORECASE,
-    ):
-        subject = m.group(1).strip()
-        value = m.group(2).strip()
-
+    def _try_store(subject: str, value: str) -> None:
+        """Normalize and store a subject-value pair if it's valid."""
         # Normalize slot name
         slot = re.sub(r"['\s]+", "_", subject.lower()).strip("_")
         slot = re.sub(r"[^a-z0-9_]", "", slot)
 
-        if not slot or not value:
-            continue
+        if not slot or not value or len(slot) < 2:
+            return
         if slot in facts:
-            continue
-        if slot in _SUBJECT_BLOCKLIST or len(slot) < 2:
-            continue
+            return
+        if slot in _SUBJECT_BLOCKLIST:
+            return
         # Reject if value starts with a common continuation word (likely not a fact)
         if re.match(r"^(?:that|not|also|just|still|always|never|really|very)\b", value, re.IGNORECASE):
-            continue
-        # Reject single-char values
+            return
         if len(value.strip()) < 2:
-            continue
+            return
 
         # Trim trailing conjunctions
         value = re.split(r"\b(?:and|but|so|though|because|however|which)\b", value, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         if value:
             facts[slot] = ExtractedFact(slot, value, _norm_text(value))
 
-    # Pattern: "X is set to Y" / "X is configured as Y" / "X is currently Y"
-    for m in re.finditer(
-        r"\b([a-z][a-z_\s]{1,25}?)\s+is\s+(?:set to|configured (?:as|to)|currently)\s+"
-        r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
-        text, flags=re.IGNORECASE,
-    ):
-        subject = m.group(1).strip()
-        value = m.group(2).strip()
-        slot = re.sub(r"['\s]+", "_", subject.lower()).strip("_")
-        slot = re.sub(r"[^a-z0-9_]", "", slot)
-        if slot and value and slot not in facts and len(slot) >= 2:
-            facts[slot] = ExtractedFact(slot, value, _norm_text(value))
+    # ── Clause splitting ─────────────────────────────────────────────
+    # Split on commas and semicolons to handle compound sentences like
+    # "The frontend is React, backend is FastAPI"
+    clauses = re.split(r"[;]|\s*,\s+(?=[a-z])", text, flags=re.IGNORECASE)
 
-    # Pattern: "X equals Y" / "X = Y" (informal equality)
-    for m in re.finditer(
-        r"\b([a-z][a-z_\s]{1,25}?)\s+(?:equals?|==?)\s+"
-        r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
-        text, flags=re.IGNORECASE,
-    ):
-        subject = m.group(1).strip()
-        value = m.group(2).strip()
-        slot = re.sub(r"['\s]+", "_", subject.lower()).strip("_")
-        slot = re.sub(r"[^a-z0-9_]", "", slot)
-        if slot and value and slot not in facts and len(slot) >= 2:
-            facts[slot] = ExtractedFact(slot, value, _norm_text(value))
+    for clause in clauses:
+        clause = clause.strip()
+        if not clause or len(clause) < 5:
+            continue
+
+        # ── Pattern 1: "[article/possessive] X is/are/was/were Y" ────
+        for m in re.finditer(
+            r"\b(?:my|the|our|his|her|their)\s+"
+            r"([a-z][a-z\s']{0,30}?)\s+(?:is|are|was|were)\s+"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 2: "X is/are Y" (bare subject, no article needed) ──
+        # More restrictive: subject must be 1-3 words, no pronouns
+        for m in re.finditer(
+            r"(?:^|\.\s+)"
+            r"([A-Z][a-z]+(?:\s+[a-z]+){0,2})\s+(?:is|are|was|were)\s+"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+            clause,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 3: "X uses/handles/supports/runs/provides Y" ──────
+        for m in re.finditer(
+            r"\b(?:the|our|my|their)?\s*"
+            r"([a-z][a-z\s']{0,30}?)\s+"
+            r"(?:uses?|handles?|supports?|runs?|provides?|utilizes?|leverages?|relies on|is powered by|is built (?:with|on|using))\s+"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 4: "X requires/needs/demands/mandates Y" ──────────
+        for m in re.finditer(
+            r"\b(?:the|our|my|their)?\s*"
+            r"([a-z][a-z\s']{0,30}?)\s+"
+            r"(?:requires?|needs?|demands?|mandates?|expects?)\s+"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 5: "We agreed/decided to X" / "We chose X" ────────
+        m = re.search(
+            r"\b(?:we|they|the team|I)\s+"
+            r"(?:agreed|decided|chose|committed|opted)\s+"
+            r"(?:to\s+)?(?:use\s+|go with\s+|adopt\s+|implement\s+|switch to\s+)?"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+            clause, flags=re.IGNORECASE,
+        )
+        if m:
+            value = m.group(1).strip()
+            # Try to infer a slot name from the context
+            if re.search(r"REST|GraphQL|SOAP|gRPC", value, re.IGNORECASE):
+                _try_store("api_style", value)
+            elif re.search(r"arch|pattern|micro|mono", value, re.IGNORECASE):
+                _try_store("architecture", value)
+            else:
+                _try_store("decision", value)
+
+        # ── Pattern 6: "X should be / must be / needs to be Y" ────────
+        for m in re.finditer(
+            r"\b(?:the|our|my|their)?\s*"
+            r"([a-z][a-z_\s]{1,25}?)\s+"
+            r"(?:should\s+be|must\s+be|needs?\s+to\s+be|has\s+to\s+be|ought\s+to\s+be)\s+"
+            r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\?|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 7: "X is set to Y" / "X is configured as Y" ──────
+        for m in re.finditer(
+            r"\b([a-z][a-z_\s]{1,25}?)\s+is\s+(?:set to|configured (?:as|to)|currently)\s+"
+            r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 8: "X is handled/managed/done via/by/through Y" ──
+        for m in re.finditer(
+            r"\b([a-z][a-z\s']{0,30}?)\s+"
+            r"is\s+(?:handled|managed|done|performed|implemented|achieved|provided)\s+"
+            r"(?:via|by|through|using|with)\s+"
+            r"([^\n\r\.;!\?]{2,80}?)(?:\.|;|!|\?|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
+        # ── Pattern 9: "X equals Y" / "X = Y" ────────────────────────
+        for m in re.finditer(
+            r"\b([a-z][a-z_\s]{1,25}?)\s+(?:equals?|==?)\s+"
+            r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
+            clause, flags=re.IGNORECASE,
+        ):
+            _try_store(m.group(1).strip(), m.group(2).strip())
+
