@@ -1,0 +1,379 @@
+[
+  {
+    "_comment": "=== PERSONAL / IDENTITY FACTS ===",
+    "_section": "personal"
+  },
+  {
+    "id": "P01",
+    "text": "My name is Sarah Chen",
+    "expected": {"name": "Sarah Chen"},
+    "category": "personal",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "P02",
+    "text": "I work at Microsoft as a senior engineer",
+    "expected": {"employer": "Microsoft", "title": "senior engineer"},
+    "category": "professional",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "P03",
+    "text": "I'm 32 years old and live in Seattle",
+    "expected": {"age": "32", "location": "Seattle"},
+    "category": "personal",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "P04",
+    "text": "I graduated from MIT in 2018 with a degree in computer science",
+    "expected": {"school": "MIT", "graduation_year": "2018", "major": "computer science"},
+    "category": "education",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "P05",
+    "text": "My favorite color is blue and I enjoy hiking on weekends",
+    "expected": {"favorite_color": "blue", "hobby": "hiking"},
+    "category": "personal",
+    "difficulty": "easy",
+    "style": "template"
+  },
+
+  {
+    "_comment": "=== TECHNICAL FACTS — TEMPLATE STYLE ===",
+    "_section": "tech_template"
+  },
+  {
+    "id": "T01",
+    "text": "We use PostgreSQL as our primary database",
+    "expected": {"database": "PostgreSQL"},
+    "category": "technical",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "T02",
+    "text": "Our application runs on Python 3.11",
+    "expected": {"programming_language": "Python"},
+    "category": "technical",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "T03",
+    "text": "The frontend is built with React",
+    "expected": {"frontend_framework": "React"},
+    "category": "technical",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "T04",
+    "text": "We deploy everything on AWS",
+    "expected": {"cloud_provider": "AWS"},
+    "category": "technical",
+    "difficulty": "easy",
+    "style": "template"
+  },
+  {
+    "id": "T05",
+    "text": "Our CI pipeline uses GitHub Actions",
+    "expected": {"ci_cd": "GitHub Actions"},
+    "category": "technical",
+    "difficulty": "easy",
+    "style": "template"
+  },
+
+  {
+    "_comment": "=== TECHNICAL FACTS — CONVERSATIONAL STYLE ===",
+    "_section": "tech_conversational"
+  },
+  {
+    "id": "C01",
+    "text": "Yeah so we ended up going with Postgres after the whole MySQL disaster",
+    "expected": {"database": "Postgres"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C02",
+    "text": "We migrated from MySQL to PostgreSQL last quarter",
+    "expected": {"database": "PostgreSQL"},
+    "category": "technical",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "C03",
+    "text": "Dropped Redis, switched to Memcached for caching",
+    "expected": {"database": "Memcached"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C04",
+    "text": "Currently evaluating Vue but still on React for now",
+    "expected": {"frontend_framework": "React"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational",
+    "_note": "Vue is tentative, React is current — correct answer is React"
+  },
+  {
+    "id": "C05",
+    "text": "Ripped out Jenkins last month, way happier with GitHub Actions",
+    "expected": {"ci_cd": "GitHub Actions"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C06",
+    "text": "We use GitHub Actions for CI and Datadog for monitoring",
+    "expected": {"ci_cd": "GitHub Actions", "monitoring": "Datadog"},
+    "category": "technical",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "C07",
+    "text": "Our backend is FastAPI with a React frontend",
+    "expected": {"backend_framework": "FastAPI", "frontend_framework": "React"},
+    "category": "technical",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "C08",
+    "text": "TypeScript everywhere, no more JavaScript",
+    "expected": {"language": "TypeScript"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C09",
+    "text": "Our stack is Python, FastAPI, PostgreSQL, and Redis on AWS",
+    "expected": {"language": "Python", "backend_framework": "FastAPI", "database": "PostgreSQL", "cloud_provider": "AWS"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C10",
+    "text": "Kafka handles all our event streaming, replaced RabbitMQ",
+    "expected": {"message_queue": "Kafka"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C11",
+    "text": "Still running Nginx in front of everything",
+    "expected": {"backend_framework": "Nginx"},
+    "category": "technical",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "C12",
+    "text": "Had to go with MongoDB because the CTO insisted",
+    "expected": {"database": "MongoDB"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "C13",
+    "text": "We love Tailwind CSS for styling",
+    "expected": {"frontend_framework": "Tailwind CSS"},
+    "category": "technical",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "C14",
+    "text": "Thinking about replacing Heroku with Fly.io but haven't decided yet",
+    "expected": {"cloud_provider": "Heroku"},
+    "category": "technical",
+    "difficulty": "hard",
+    "style": "conversational",
+    "_note": "Fly.io is tentative — Heroku is still current"
+  },
+  {
+    "id": "C15",
+    "text": "Jack mentioned we should deploy on AWS",
+    "expected": {"cloud_provider": "AWS"},
+    "category": "technical",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+
+  {
+    "_comment": "=== MIXED FACTS (personal + technical in one sentence) ===",
+    "_section": "mixed"
+  },
+  {
+    "id": "M01",
+    "text": "I work at Stripe and we use Ruby on Rails for everything",
+    "expected": {"employer": "Stripe", "backend_framework": "Ruby on Rails"},
+    "category": "mixed",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "M02",
+    "text": "Sarah is a DevOps engineer at Netflix, she manages our Kubernetes clusters on AWS",
+    "expected": {"employer": "Netflix", "orchestration": "Kubernetes", "cloud_provider": "AWS"},
+    "category": "mixed",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "M03",
+    "text": "I'm a Python developer based in Austin, currently learning Rust on the side",
+    "expected": {"programming_language": "Python", "location": "Austin"},
+    "category": "mixed",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+
+  {
+    "_comment": "=== SKIP / NO-EXTRACT CASES (should extract nothing or specific things) ===",
+    "_section": "skip"
+  },
+  {
+    "id": "S01",
+    "text": "What database are we using?",
+    "expected": {},
+    "category": "skip",
+    "difficulty": "easy",
+    "style": "conversational",
+    "_note": "Questions should not be extracted"
+  },
+  {
+    "id": "S02",
+    "text": "Not sure if we should go with Svelte or Vue",
+    "expected": {},
+    "category": "skip",
+    "difficulty": "medium",
+    "style": "conversational",
+    "_note": "Uncertainty — should not extract"
+  },
+  {
+    "id": "S03",
+    "text": "The weather is nice today",
+    "expected": {},
+    "category": "skip",
+    "difficulty": "easy",
+    "style": "conversational",
+    "_note": "No facts at all"
+  },
+  {
+    "id": "S04",
+    "text": "I don't know if we need Redis",
+    "expected": {},
+    "category": "skip",
+    "difficulty": "medium",
+    "style": "conversational",
+    "_note": "Uncertainty"
+  },
+
+  {
+    "_comment": "=== MIGRATION / DEPRECATION FACTS ===",
+    "_section": "migration"
+  },
+  {
+    "id": "D01",
+    "text": "We migrated from MySQL to PostgreSQL",
+    "expected": {"database": "PostgreSQL"},
+    "category": "migration",
+    "difficulty": "medium",
+    "style": "conversational",
+    "_note": "Current DB is PostgreSQL, MySQL is deprecated"
+  },
+  {
+    "id": "D02",
+    "text": "Switched from Angular to React last year",
+    "expected": {"frontend_framework": "React"},
+    "category": "migration",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "D03",
+    "text": "We moved to AWS after leaving Azure",
+    "expected": {"cloud_provider": "AWS"},
+    "category": "migration",
+    "difficulty": "medium",
+    "style": "conversational"
+  },
+  {
+    "id": "D04",
+    "text": "Tried Deno but went back to Node.js",
+    "expected": {"language": "Node.js"},
+    "category": "migration",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "D05",
+    "text": "We abandoned our custom auth and switched to Auth0",
+    "expected": {"auth": "Auth0"},
+    "category": "migration",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+
+  {
+    "_comment": "=== MULTI-ENTITY COMPLEX SENTENCES ===",
+    "_section": "complex"
+  },
+  {
+    "id": "X01",
+    "text": "The backend team uses FastAPI and the frontend team uses Next.js, all deployed on Vercel with GitHub Actions for CI/CD",
+    "expected": {"backend_framework": "FastAPI", "frontend_framework": "Next.js", "cloud_provider": "Vercel", "ci_cd": "GitHub Actions"},
+    "category": "complex",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "X02",
+    "text": "We run Django with PostgreSQL, use Celery for background jobs, Redis as the broker, and deploy on DigitalOcean with Terraform",
+    "expected": {"backend_framework": "Django", "database": "PostgreSQL", "message_queue": "Celery", "cloud_provider": "DigitalOcean", "iac_tool": "Terraform"},
+    "category": "complex",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "X03",
+    "text": "Main language is Go, but scripts are in Python. We use Docker and Kubernetes on GCP",
+    "expected": {"language": "Go", "container_runtime": "Docker", "orchestration": "Kubernetes", "cloud_provider": "GCP"},
+    "category": "complex",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "X04",
+    "text": "We settled on Stripe for payments, Auth0 for auth, and Datadog for observability",
+    "expected": {"payments": "Stripe", "auth": "Auth0", "monitoring": "Datadog"},
+    "category": "complex",
+    "difficulty": "hard",
+    "style": "conversational"
+  },
+  {
+    "id": "X05",
+    "text": "Testing with pytest and Playwright, monitoring via Sentry and Grafana",
+    "expected": {"testing": "pytest", "monitoring": "Sentry"},
+    "category": "complex",
+    "difficulty": "hard",
+    "style": "conversational"
+  }
+]
