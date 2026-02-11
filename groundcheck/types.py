@@ -30,10 +30,12 @@ class ExtractedFact:
         slot: The fact category/type (e.g., "name", "employer", "location")
         value: The actual value of the fact
         normalized: Normalized/lowercased version for matching
+        source: Extraction method ("regex", "neural", "hybrid")
     """
     slot: str
     value: Any
     normalized: str
+    source: str = "regex"
 
 
 @dataclass

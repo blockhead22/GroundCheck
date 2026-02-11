@@ -31,18 +31,28 @@ class SemanticMatcher:
     # Common paraphrase patterns
     SYNONYMS = {
         "employer": {
-            "works at": ["employed by", "employed at", "job at", "works for", "working at", "working for"],
-            "employee of": ["works at", "employed by"],
+            "works at": ["employed by", "employed at", "job at", "works for", "working at", "working for", "employee of"],
         },
         "location": {
-            "lives in": ["resides in", "based in", "located in", "living in"],
-            "from": ["originally from", "comes from", "hometown"],
+            "lives in": ["resides in", "based in", "located in", "living in", "moved to", "relocated to"],
+            "from": ["originally from", "comes from", "hometown", "grew up in", "native of"],
         },
         "occupation": {
             "software engineer": ["swe", "software developer", "programmer", "coder", "dev"],
             "data scientist": ["ds", "ml engineer", "machine learning engineer"],
             "product manager": ["pm", "product lead"],
-        }
+            "teacher": ["instructor", "educator", "professor", "lecturer"],
+            "doctor": ["physician", "md", "medical doctor"],
+            "lawyer": ["attorney", "legal counsel"],
+        },
+        "school": {
+            "studied at": ["graduated from", "attended", "went to", "alumni of", "alumnus of"],
+        },
+        "degree": {
+            "bachelors": ["ba", "bs", "b.a.", "b.s.", "bachelor of arts", "bachelor of science", "undergraduate degree"],
+            "masters": ["ma", "ms", "m.a.", "m.s.", "master of arts", "master of science", "graduate degree"],
+            "phd": ["ph.d.", "doctorate", "doctoral degree"],
+        },
     }
     
     def __init__(
@@ -72,29 +82,92 @@ class SemanticMatcher:
         return _embedding_model
     
     def _normalize(self, text: str) -> str:
-        """Normalize text for comparison."""
+        """Normalize text for comparison.
+        
+        Canonicalizes common paraphrase forms into stable templates so that
+        semantically equivalent phrases produce the same normalized string.
+        """
         if not text:
             return ""
         t = text.lower().strip()
-        # Canonicalize common paraphrase forms into stable templates.
+        
+        # ── Employer / work patterns ──
         t = re.sub(
-            r'\b(employed by|employed at|works for|working for|working at|works at|job at)\b',
+            r'\b(employed by|employed at|works for|working for|working at|works at|job at|employee of|employed with)\b',
             'work at',
             t,
         )
+        
+        # ── Location / residence patterns ──
         t = re.sub(
-            r'\b(resides in|based in|located in|living in)\b',
+            r'\b(resides in|based in|located in|living in|moved to|relocated to)\b',
             'live in',
             t,
         )
+        
+        # ── Education / school patterns ──
         t = re.sub(
-            r'\b(graduated from|graduate from|studied at|study at|attended|went to)\b',
+            r'\b(graduated from|graduate from|studied at|study at|attended|went to|alumni of|alumnus of)\b',
             'study at',
             t,
         )
-        # Normalize educational suffix noise.
-        t = re.sub(r'\buniversity\b', '', t)
+        
+        # ── Name patterns ──
+        t = re.sub(
+            r'\b(named|called|known as|goes by|my name is|name is)\b',
+            'named',
+            t,
+        )
+        
+        # ── Occupation / role patterns ──
+        t = re.sub(
+            r'\b(works as|working as|employed as|job is|role is|position is|title is)\b',
+            'role',
+            t,
+        )
+        
+        # ── Age patterns ──
+        t = re.sub(
+            r'\b(years old|year old|aged)\b',
+            'years old',
+            t,
+        )
+        
+        # ── Possessive pronoun stripping ──
+        t = re.sub(r'\b(my|your|his|her|their|our|its)\b', '', t)
+        
+        # ── Article stripping ──
         t = re.sub(r'\b(a|an|the)\b', '', t)
+        
+        # ── Educational suffix noise ──
+        t = re.sub(r'\buniversity\b', '', t)
+        
+        # ── Common abbreviation expansion ──
+        # Expand well-known abbreviations BEFORE stripping punctuation so that
+        # "NYC" → "new york city" matches "New York City" via exact.
+        _ABBREVIATIONS = {
+            r'\bnyc\b': 'new york city',
+            r'\bla\b': 'los angeles',
+            r'\bsf\b': 'san francisco',
+            r'\bdc\b': 'washington dc',
+            r'\buk\b': 'united kingdom',
+            r'\bus\b': 'united states',
+            r'\busa\b': 'united states',
+            r'\bml\b': 'machine learning',
+            r'\bai\b': 'artificial intelligence',
+            r'\bjs\b': 'javascript',
+            r'\bts\b': 'typescript',
+            r'\bpy\b': 'python',
+            r'\bswe\b': 'software engineer',
+            r'\bpm\b': 'product manager',
+            r'\bds\b': 'data scientist',
+            r'\bphd\b': 'doctorate',
+            r'\bmit\b': 'massachusetts institute of technology',
+        }
+        for pattern, expansion in _ABBREVIATIONS.items():
+            t = re.sub(pattern, expansion, t)
+        
+        # ── Strip non-alphanumeric ──
         t = re.sub(r'[^a-z0-9\s]', ' ', t)
         t = ' '.join(t.split())
         return t
@@ -193,3 +266,26 @@ class SemanticMatcher:
                     return True, "embedding", supported
         
         return False, "none", None
+    
+    def similarity(self, text_a: str, text_b: str) -> float:
+        """Compute similarity score between two texts.
+        
+        Uses embedding cosine similarity if available, falls back to
+        SequenceMatcher ratio on normalized text.
+        
+        Returns:
+            Float between 0.0 and 1.0
+        """
+        if self.use_embeddings and _HAS_NUMPY:
+            model = self._get_embedding_model()
+            if model is not None:
+                try:
+                    embeddings = model.encode([text_a, text_b])
+                    emb1, emb2 = embeddings[0], embeddings[1]
+                    n1, n2 = np.linalg.norm(emb1), np.linalg.norm(emb2)
+                    if n1 > 0 and n2 > 0:
+                        return float(np.dot(emb1, emb2) / (n1 * n2))
+                except Exception:
+                    pass
+        # Fallback: fuzzy ratio on normalized text
+        return SequenceMatcher(None, self._normalize(text_a), self._normalize(text_b)).ratio()

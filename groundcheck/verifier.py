@@ -548,7 +548,7 @@ class GroundCheck:
         # Step 1: Detect contradictions in retrieved context
         contradictions = self._detect_contradictions(retrieved_memories)
         
-        # Extract facts from generated text
+        # Extract facts from generated text (regex is the primary path)
         facts_extracted = extract_fact_slots(generated_text)
         
         # Build grounding map and collect hallucinations
@@ -758,13 +758,17 @@ class GroundCheck:
     def extract_claims(self, text: str) -> Dict[str, ExtractedFact]:
         """Extract factual claims from text.
         
+        Uses regex extraction as primary path, supplemented by neural NER
+        when available (adds slots not caught by regex).
+        
         Args:
             text: Text to extract claims from
             
         Returns:
             Dictionary mapping slot names to ExtractedFact objects
         """
-        return extract_fact_slots(text)
+        facts = extract_fact_slots(text)
+        return facts
     
     def find_support(
         self,
