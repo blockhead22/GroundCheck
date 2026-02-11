@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0] - 2025-07-15
+## [0.3.0] - 2026-02-10
 
 ### Added
 - **`neural=True` parameter** — `GroundCheck(neural=True)` explicitly controls whether semantic matching is active. Defaults to `True` for backward compatibility; pass `neural=False` for zero-dependency sub-2ms mode.
