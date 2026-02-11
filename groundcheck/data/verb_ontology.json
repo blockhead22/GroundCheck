@@ -1,0 +1,228 @@
+{
+  "_meta": {
+    "description": "Verb ontology for knowledge-based fact extraction. Maps verb lemmas/phrases to semantic categories that determine how facts should be stored.",
+    "version": "0.4.0"
+  },
+
+  "adoption": {
+    "description": "Subject started using/chose X. Creates a positive fact.",
+    "confidence": 0.90,
+    "temporal": "current",
+    "verbs": [
+      "use", "uses", "using", "used",
+      "adopt", "adopts", "adopted", "adopting",
+      "chose", "choose", "choosing",
+      "picked", "pick", "picking",
+      "went with", "going with", "go with",
+      "run", "runs", "running",
+      "rely on", "relies on", "relying on",
+      "built with", "build with", "building with",
+      "built on", "build on", "building on",
+      "work with", "works with", "working with",
+      "deploy on", "deploys on", "deployed on", "deploying on",
+      "deploy to", "deploys to", "deployed to", "deploying to",
+      "host on", "hosts on", "hosted on", "hosting on",
+      "power", "powers", "powered by",
+      "leverage", "leverages", "leveraging",
+      "implement", "implements", "implemented", "implementing",
+      "integrate", "integrates", "integrated", "integrating",
+      "set up", "sets up", "setting up",
+      "configured", "configure", "configuring",
+      "installed", "install", "installing",
+      "ship with", "ships with", "shipping with",
+      "standardized on", "standardize on",
+      "ended up going with", "ended up with", "ended up using",
+      "ended up on", "ended up choosing",
+      "settled on", "settles on", "settling on"
+    ]
+  },
+
+  "migration": {
+    "description": "Subject moved FROM old thing TO new thing. New thing is current, old is deprecated.",
+    "confidence": 0.92,
+    "temporal": "transition",
+    "verbs": [
+      "migrated to", "migrate to", "migrating to",
+      "migrated from", "migrate from", "migrating from",
+      "switched to", "switch to", "switching to",
+      "switched from", "switch from", "switching from",
+      "moved to", "move to", "moving to",
+      "transitioned to", "transition to", "transitioning to",
+      "upgraded to", "upgrade to", "upgrading to",
+      "replaced with", "replace with", "replacing with",
+      "converted to", "convert to", "converting to",
+      "ported to", "port to", "porting to",
+      "swapped to", "swap to", "swapping to",
+      "swapped out", "swap out", "swapping out",
+      "phased out", "phase out", "phasing out",
+      "went back to", "go back to", "going back to",
+      "reverted to", "revert to", "reverting to"
+    ]
+  },
+
+  "deprecation": {
+    "description": "Subject stopped using X. X is no longer active.",
+    "confidence": 0.88,
+    "temporal": "past",
+    "verbs": [
+      "dropped", "drop", "dropping",
+      "removed", "remove", "removing",
+      "stopped using", "stop using",
+      "abandoned", "abandon", "abandoning",
+      "deprecated", "deprecate", "deprecating",
+      "killed", "kill", "killing",
+      "ditched", "ditch", "ditching",
+      "got rid of", "get rid of", "getting rid of",
+      "sunset", "sunsetting", "sunsetted",
+      "retired", "retire", "retiring",
+      "eliminated", "eliminate", "eliminating",
+      "scrapped", "scrap", "scrapping",
+      "ripped out", "rip out", "ripping out",
+      "tore out", "tear out", "tearing out",
+      "no more", "done with",
+      "replaced", "replacing"
+    ]
+  },
+
+  "tentative": {
+    "description": "Subject is considering X but hasn't committed. Low confidence, don't treat as current fact.",
+    "confidence": 0.35,
+    "temporal": "future",
+    "verbs": [
+      "considering", "consider",
+      "evaluating", "evaluate",
+      "looking at", "look at", "looked at",
+      "exploring", "explore",
+      "thinking about", "think about",
+      "might use", "might switch to", "might try",
+      "could use", "could switch to",
+      "planning to use", "plan to use",
+      "want to try", "wants to try",
+      "interested in",
+      "researching", "research",
+      "prototyping with", "prototype with",
+      "experimenting with", "experiment with",
+      "testing out", "test out",
+      "toying with", "playing with",
+      "tried", "gave a try", "gave a shot",
+      "checked out"
+    ]
+  },
+
+  "capability": {
+    "description": "States what X can/can't do, supports, handles. Describes properties.",
+    "confidence": 0.85,
+    "temporal": "current",
+    "verbs": [
+      "supports", "support", "supporting",
+      "handles", "handle", "handling",
+      "provides", "provide", "providing",
+      "offers", "offer", "offering",
+      "includes", "include", "including",
+      "features", "feature",
+      "enables", "enable", "enabling",
+      "allows", "allow", "allowing",
+      "can handle", "can support", "can process",
+      "ships with",
+      "comes with",
+      "has built-in"
+    ]
+  },
+
+  "limitation": {
+    "description": "States what X can't do, a constraint or problem. Negative fact.",
+    "confidence": 0.85,
+    "temporal": "current",
+    "verbs": [
+      "can't handle", "cannot handle",
+      "can't support", "cannot support",
+      "doesn't support", "does not support",
+      "doesn't work with", "does not work with",
+      "fails when", "fails on", "fails with",
+      "breaks when", "breaks on", "breaks with",
+      "struggles with", "struggle with",
+      "chokes on", "choke on",
+      "crashes when", "crash when",
+      "limited to", "limit to",
+      "maxes out at", "max out at",
+      "tops out at",
+      "bottlenecks at", "bottleneck at",
+      "lacks", "lack", "lacking",
+      "missing", "is missing",
+      "has no", "have no",
+      "won't work with", "will not work with"
+    ]
+  },
+
+  "assignment": {
+    "description": "X is responsible for / owns Y. Org/team/person assignment.",
+    "confidence": 0.88,
+    "temporal": "current",
+    "verbs": [
+      "owns", "own", "owning",
+      "manages", "manage", "managing",
+      "maintains", "maintain", "maintaining",
+      "leads", "lead", "leading",
+      "responsible for", "in charge of",
+      "handles", "handle", "handling",
+      "runs", "run", "running",
+      "oversees", "oversee", "overseeing",
+      "works on", "work on", "working on",
+      "assigned to", "assign to"
+    ]
+  },
+
+  "requirement": {
+    "description": "X requires/needs/must have Y. Constraint or dependency.",
+    "confidence": 0.90,
+    "temporal": "current",
+    "verbs": [
+      "requires", "require", "requiring",
+      "needs", "need", "needing",
+      "depends on", "depend on", "depending on",
+      "must have", "must use",
+      "has to use", "have to use",
+      "should use", "should have",
+      "mandatory", "required"
+    ]
+  },
+
+  "preference": {
+    "description": "Subject prefers/likes/favors X. Softer than adoption.",
+    "confidence": 0.75,
+    "temporal": "current",
+    "verbs": [
+      "prefer", "prefers", "preferred", "preferring",
+      "like", "likes", "liked",
+      "love", "loves", "loved",
+      "favor", "favors", "favored", "favoring",
+      "recommend", "recommends", "recommended",
+      "enjoy", "enjoys", "enjoyed",
+      "fan of", "big fan of",
+      "go-to", "my go-to", "our go-to",
+      "swear by", "swears by",
+      "happy with", "happier with",
+      "pleased with", "satisfied with",
+      "way happier with", "much happier with"
+    ]
+  },
+
+  "creation": {
+    "description": "Subject built/created/wrote X. Attribution of authorship.",
+    "confidence": 0.90,
+    "temporal": "past",
+    "verbs": [
+      "built", "build", "building",
+      "created", "create", "creating",
+      "wrote", "write", "writing",
+      "developed", "develop", "developing",
+      "designed", "design", "designing",
+      "authored", "author", "authoring",
+      "made", "make", "making",
+      "launched", "launch", "launching",
+      "shipped", "ship", "shipping",
+      "released", "release", "releasing",
+      "published", "publish", "publishing"
+    ]
+  }
+}

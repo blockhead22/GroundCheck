@@ -6,12 +6,34 @@ from difflib import SequenceMatcher
 
 from .types import Memory, VerificationReport, ExtractedFact
 from .fact_extractor import extract_fact_slots, split_compound_values
+from .knowledge_extractor import extract_knowledge_facts
 from .utils import (
     normalize_text,
     has_memory_claim,
     create_memory_claim_regex,
     parse_fact_from_memory_text
 )
+
+# Mapping of regex slot names → knowledge slot names they semantically cover.
+# When regex already extracts "programming_language", knowledge should not also
+# add "language" (the taxonomy name for the same concept).
+_REGEX_SLOT_ALIASES: Dict[str, Set[str]] = {
+    "programming_language": {"language"},
+    "python_version": {"language"},
+    "goal": {"language"},  # "learn Rust" is a goal, not a language assertion
+    "hobby": {"language"},
+    "framework": {"backend_framework", "frontend_framework"},
+}
+
+
+def _regex_covered_slots(regex_facts: Dict[str, ExtractedFact]) -> Set[str]:
+    """Return knowledge slot names that are already covered by regex facts."""
+    covered: Set[str] = set()
+    for slot in regex_facts:
+        covered.add(slot)
+        if slot in _REGEX_SLOT_ALIASES:
+            covered.update(_REGEX_SLOT_ALIASES[slot])
+    return covered
 
 
 class GroundCheck:
@@ -551,6 +573,15 @@ class GroundCheck:
         # Extract facts from generated text (regex is the primary path)
         facts_extracted = extract_fact_slots(generated_text)
         
+        # Supplement with knowledge-based extraction (Tier 1.5)
+        # Knowledge facts fill gaps that regex can't handle
+        knowledge_facts = extract_knowledge_facts(generated_text)
+        # Build set of slots already covered by regex (including aliases)
+        _covered = _regex_covered_slots(facts_extracted)
+        for slot, fact in knowledge_facts.items():
+            if slot not in facts_extracted and slot not in _covered:
+                facts_extracted[slot] = fact
+        
         # Build grounding map and collect hallucinations
         hallucinations = []
         grounding_map = {}
@@ -768,6 +799,12 @@ class GroundCheck:
             Dictionary mapping slot names to ExtractedFact objects
         """
         facts = extract_fact_slots(text)
+        # Supplement with knowledge-based extraction (Tier 1.5)
+        knowledge_facts = extract_knowledge_facts(text)
+        _covered = _regex_covered_slots(facts)
+        for slot, fact in knowledge_facts.items():
+            if slot not in facts and slot not in _covered:
+                facts[slot] = fact
         return facts
     
     def find_support(

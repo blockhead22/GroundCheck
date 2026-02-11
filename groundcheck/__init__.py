@@ -19,6 +19,14 @@ __version__ = "0.3.0"
 from .types import Memory, VerificationReport, ExtractedFact, ContradictionDetail
 from .verifier import GroundCheck
 from .fact_extractor import extract_fact_slots
+from .knowledge_extractor import (
+    extract_knowledge_facts,
+    extract_knowledge_facts_detailed,
+    KnowledgeFact,
+    infer_facts,
+    find_entities,
+    find_verbs,
+)
 
 # Neural extraction and semantic matching (optional)
 try:
@@ -41,6 +49,12 @@ __all__ = [
     "ExtractedFact",
     "ContradictionDetail",
     "extract_fact_slots",
+    "extract_knowledge_facts",
+    "extract_knowledge_facts_detailed",
+    "KnowledgeFact",
+    "infer_facts",
+    "find_entities",
+    "find_verbs",
     "HybridFactExtractor",
     "NeuralExtractionResult",
     "SemanticMatcher",

@@ -1,0 +1,271 @@
+{
+  "_meta": {
+    "description": "Entity taxonomy mapping known entities to categories. Used by knowledge extractor to infer slot names from recognized entities in natural language.",
+    "version": "0.4.0"
+  },
+
+  "database": {
+    "slot": "database",
+    "exclusive": true,
+    "entities": [
+      "PostgreSQL", "Postgres", "MySQL", "MariaDB", "SQLite",
+      "MongoDB", "DynamoDB", "Cassandra", "CockroachDB", "CouchDB",
+      "Redis", "Memcached", "Valkey",
+      "Oracle", "SQL Server", "MSSQL",
+      "Firestore", "Supabase", "PlanetScale", "Neon",
+      "Neo4j", "ArangoDB", "Dgraph",
+      "InfluxDB", "TimescaleDB", "QuestDB",
+      "Elasticsearch", "OpenSearch", "Solr",
+      "Snowflake", "BigQuery", "Redshift", "Databricks",
+      "ClickHouse", "DuckDB", "Druid"
+    ]
+  },
+
+  "programming_language": {
+    "slot": "language",
+    "exclusive": false,
+    "entities": [
+      "Python", "JavaScript", "TypeScript", "Java", "Kotlin",
+      "Go", "Golang", "Rust", "C", "C++", "C#", "Csharp",
+      "Ruby", "PHP", "Swift", "Objective-C",
+      "Scala", "Clojure", "Elixir", "Erlang", "Haskell",
+      "Lua", "Perl", "R", "Julia", "Dart", "Zig",
+      "COBOL", "Fortran", "Assembly",
+      "SQL", "GraphQL", "WASM", "WebAssembly",
+      "Deno", "Node.js", "Node", "Bun"
+    ]
+  },
+
+  "frontend_framework": {
+    "slot": "frontend_framework",
+    "exclusive": true,
+    "entities": [
+      "React", "React.js", "ReactJS",
+      "Vue", "Vue.js", "VueJS",
+      "Angular", "AngularJS",
+      "Svelte", "SvelteKit",
+      "Next.js", "NextJS", "Nuxt", "Nuxt.js",
+      "Remix", "Astro", "Gatsby",
+      "Solid", "SolidJS", "Solid.js",
+      "Qwik", "Preact",
+      "htmx", "Alpine.js", "Stimulus",
+      "Ember", "Ember.js", "Backbone", "Backbone.js",
+      "Tailwind CSS", "Tailwind", "Bootstrap", "Material UI", "Chakra UI"
+    ]
+  },
+
+  "backend_framework": {
+    "slot": "backend_framework",
+    "exclusive": true,
+    "entities": [
+      "Express", "Express.js", "Fastify", "Koa", "Hono", "NestJS",
+      "Django", "Flask", "FastAPI", "Starlette", "Tornado", "Sanic",
+      "Rails", "Ruby on Rails", "Sinatra", "Hanami",
+      "Spring", "Spring Boot", "Quarkus", "Micronaut",
+      "ASP.NET", ".NET", "Blazor",
+      "Gin", "Echo", "Fiber", "Chi",
+      "Actix", "Axum", "Rocket",
+      "Phoenix", "Plug",
+      "Laravel", "Symfony", "CodeIgniter",
+      "Nginx", "Apache", "Caddy", "Traefik", "HAProxy"
+    ]
+  },
+
+  "cloud_provider": {
+    "slot": "cloud_provider",
+    "exclusive": true,
+    "entities": [
+      "AWS", "Amazon Web Services",
+      "GCP", "Google Cloud", "Google Cloud Platform",
+      "Azure", "Microsoft Azure",
+      "DigitalOcean", "Linode", "Akamai",
+      "Hetzner", "OVH", "Vultr",
+      "Cloudflare", "Cloudflare Workers",
+      "Vercel", "Netlify", "Render", "Railway", "Fly.io",
+      "Heroku", "Dokku"
+    ]
+  },
+
+  "container_orchestration": {
+    "slot": "orchestration",
+    "exclusive": true,
+    "entities": [
+      "Kubernetes", "K8s", "k8s",
+      "Docker Swarm", "Docker Compose",
+      "ECS", "EKS", "GKE", "AKS",
+      "Nomad", "Mesos",
+      "OpenShift", "Rancher"
+    ]
+  },
+
+  "ci_cd": {
+    "slot": "ci_cd",
+    "exclusive": false,
+    "entities": [
+      "GitHub Actions", "GitLab CI", "Jenkins",
+      "CircleCI", "Travis CI", "Buildkite",
+      "TeamCity", "Bamboo", "Drone",
+      "ArgoCD", "Argo CD", "FluxCD",
+      "Tekton", "Concourse"
+    ]
+  },
+
+  "message_queue": {
+    "slot": "message_queue",
+    "exclusive": true,
+    "entities": [
+      "Kafka", "Apache Kafka",
+      "RabbitMQ", "ActiveMQ",
+      "SQS", "Amazon SQS",
+      "NATS", "Pulsar", "Apache Pulsar",
+      "Redis Streams", "Redis Pub/Sub",
+      "ZeroMQ", "Google Pub/Sub",
+      "Celery", "Sidekiq", "Bull", "BullMQ"
+    ]
+  },
+
+  "monitoring": {
+    "slot": "monitoring",
+    "exclusive": false,
+    "entities": [
+      "Datadog", "New Relic", "Grafana", "Prometheus",
+      "PagerDuty", "OpsGenie", "VictorOps",
+      "Sentry", "Bugsnag", "Rollbar",
+      "Jaeger", "Zipkin", "OpenTelemetry",
+      "Splunk", "Loki", "ELK", "Logstash", "Kibana",
+      "Honeycomb", "Lightstep"
+    ]
+  },
+
+  "version_control": {
+    "slot": "vcs",
+    "exclusive": true,
+    "entities": [
+      "Git", "GitHub", "GitLab", "Bitbucket",
+      "Gitea", "Gogs",
+      "SVN", "Subversion", "Mercurial", "Perforce"
+    ]
+  },
+
+  "operating_system": {
+    "slot": "os",
+    "exclusive": true,
+    "entities": [
+      "Linux", "Ubuntu", "Debian", "CentOS", "RHEL", "Red Hat",
+      "Fedora", "Arch", "Alpine", "Amazon Linux",
+      "macOS", "Mac OS", "Windows", "Windows Server",
+      "FreeBSD", "OpenBSD", "NixOS"
+    ]
+  },
+
+  "auth_provider": {
+    "slot": "auth",
+    "exclusive": false,
+    "entities": [
+      "Auth0", "Okta", "Firebase Auth",
+      "Keycloak", "Cognito", "AWS Cognito",
+      "Clerk", "Supertokens", "WorkOS",
+      "OAuth", "OAuth2", "OIDC", "SAML",
+      "JWT", "Passport.js", "NextAuth"
+    ]
+  },
+
+  "payment_provider": {
+    "slot": "payments",
+    "exclusive": true,
+    "entities": [
+      "Stripe", "PayPal", "Square",
+      "Braintree", "Adyen", "Mollie",
+      "Paddle", "LemonSqueezy", "Gumroad"
+    ]
+  },
+
+  "testing_framework": {
+    "slot": "testing",
+    "exclusive": false,
+    "entities": [
+      "Jest", "Vitest", "Mocha", "Cypress", "Playwright",
+      "pytest", "unittest", "nose",
+      "JUnit", "TestNG", "Spock",
+      "RSpec", "Minitest",
+      "xUnit", "NUnit", "MSTest",
+      "Selenium", "Puppeteer", "WebdriverIO"
+    ]
+  },
+
+  "editor_ide": {
+    "slot": "editor",
+    "exclusive": true,
+    "entities": [
+      "VS Code", "VSCode", "Visual Studio Code",
+      "IntelliJ", "IntelliJ IDEA", "WebStorm", "PyCharm",
+      "Vim", "Neovim", "nvim",
+      "Emacs", "Spacemacs", "Doom Emacs",
+      "Sublime Text", "Atom", "Zed",
+      "Visual Studio", "Eclipse", "Xcode",
+      "Cursor", "Windsurf"
+    ]
+  },
+
+  "ai_ml_tool": {
+    "slot": "ai_tool",
+    "exclusive": false,
+    "entities": [
+      "OpenAI", "GPT-4", "GPT-3.5", "ChatGPT",
+      "Claude", "Anthropic",
+      "Gemini", "Bard",
+      "Llama", "Mistral", "Mixtral",
+      "Ollama", "LM Studio", "vLLM",
+      "LangChain", "LlamaIndex", "Haystack",
+      "Hugging Face", "HuggingFace",
+      "TensorFlow", "PyTorch", "JAX",
+      "scikit-learn", "sklearn",
+      "Copilot", "GitHub Copilot", "Cursor", "Tabnine"
+    ]
+  },
+
+  "package_manager": {
+    "slot": "package_manager",
+    "exclusive": true,
+    "entities": [
+      "npm", "yarn", "pnpm", "bun",
+      "pip", "poetry", "uv", "conda", "pipenv",
+      "Cargo", "Maven", "Gradle",
+      "Bundler", "Composer", "NuGet",
+      "Go modules", "go mod"
+    ]
+  },
+
+  "api_style": {
+    "slot": "api_style",
+    "exclusive": true,
+    "entities": [
+      "REST", "RESTful",
+      "GraphQL", "Apollo GraphQL",
+      "gRPC", "tRPC",
+      "WebSocket", "WebSockets",
+      "Server-Sent Events", "SSE",
+      "SOAP", "XML-RPC", "JSON-RPC"
+    ]
+  },
+
+  "iac_tool": {
+    "slot": "iac_tool",
+    "exclusive": false,
+    "entities": [
+      "Terraform", "OpenTofu",
+      "Pulumi", "CloudFormation", "AWS CDK",
+      "Ansible", "Chef", "Puppet", "SaltStack",
+      "Packer", "Vagrant"
+    ]
+  },
+
+  "container_runtime": {
+    "slot": "container_runtime",
+    "exclusive": true,
+    "entities": [
+      "Docker", "Podman", "containerd", "Buildah",
+      "LXC", "LXD", "Firecracker"
+    ]
+  }
+}
