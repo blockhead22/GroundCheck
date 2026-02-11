@@ -1,5 +1,7 @@
 """Utility functions for GroundCheck library."""
 
+from __future__ import annotations
+
 import re
 from typing import Set
 

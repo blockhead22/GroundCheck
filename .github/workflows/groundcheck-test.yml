@@ -53,4 +53,4 @@ jobs:
           key: huggingface-models-${{ hashFiles('groundcheck/neural_extractor.py') }}
       
       - name: Run neural tests
-        run: pytest tests/test_neural_extraction.py tests/test_semantic_matcher.py -v --tb=short
+        run: pytest tests/test_neural_extraction.py tests/test_semantic_matcher.py tests/test_neural_integration.py -v --tb=short

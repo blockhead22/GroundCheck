@@ -1,7 +1,10 @@
 """Integration tests for GroundCheck MCP server — tests the full tool pipeline."""
 
+import sys
 import json
 import pytest
+
+pytest.importorskip("mcp", reason="mcp package requires Python 3.10+")
 
 from groundcheck_mcp.storage import MemoryStore
 from groundcheck_mcp.server import (
