@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.4.0] - 2026-02-11
+
+### Added
+- **Tier 1.5 Knowledge-based extraction** — new inference engine that understands conversational language like "Yeah so we ended up going with Postgres after the whole MySQL disaster". Ships as curated JSON data files, zero dependencies, <5ms.
+  - **Verb ontology** (`verb_ontology.json`): 10 semantic categories (adoption, migration, deprecation, tentative, capability, limitation, assignment, requirement, preference, creation) with ~200 verb phrases
+  - **Entity taxonomy** (`entity_taxonomy.json`): 22 tech categories (database, language, frontend/backend framework, cloud provider, CI/CD, message queue, monitoring, IaC, containers, etc.) with ~500 entities
+  - **Inference rules**: clause decomposition → entity recognition → verb semantics → fact extraction
+  - **Position-aware matching**: multiple verbs in one clause route to nearest entities
+  - **Verb context inheritance**: verbless clauses inherit from preceding clause ("We use X for CI and Y for monitoring")
+  - **Negative context detection**: "MySQL disaster" → deprecation without explicit verb
+  - **Tentative override**: "considering switching to X" → tentative, not migration
+  - **Migration tracking**: "migrated from X to Y" → X deprecated, Y current
+  - **Deduplication**: migration facts suppress redundant deprecation/adoption
+- **Benchmark suite** (`benchmarks/`): 42 sentences, 65 expected slots
+  - Regex Only: P=57.6% R=29.2% F1=38.8%
+  - Knowledge Only: P=97.8% R=69.2% F1=81.1%  
+  - Combined: P=79.2% R=87.7% F1=83.2%
+  - **+44.4% F1 improvement** over regex alone, **+58.5% recall**
+- 65 new knowledge extraction tests (367 total)
+- Exported `extract_knowledge_facts`, `KnowledgeFact`, `infer_facts`, `find_entities`, `find_verbs` in public API
+
+### Changed
+- `GroundCheck.verify()` and `extract_claims()` now supplement regex with knowledge-based extraction (knowledge fills gaps, never overrides regex)
+- Slot alias mapping prevents double-counting between regex and knowledge slots
+
 ## [0.3.0] - 2026-02-10
 
 ### Added
