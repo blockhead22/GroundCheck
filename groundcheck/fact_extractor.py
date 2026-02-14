@@ -783,9 +783,12 @@ def _extract_quantitative_facts(text: str, facts: dict) -> None:
 def _extract_preference_and_opinion_facts(text: str, facts: dict) -> None:
     """Extract preferences, opinions, goals, and beliefs."""
 
-    # General "my favorite X is Y" — catches movie, food, sport, team, band, etc.
+    # General "my/your/user's favorite X is Y"
+    # Handles: "my favorite color is blue", "your favorite food is pizza",
+    # "User's favorite color is orange"
     for m in re.finditer(
-        r"\bmy\s+favou?rite\s+([a-z][a-z\s]{0,20}?)\s+is\s+([^\n\r\.;,!\?]{2,60})",
+        r"\b(?:my|your|user'?s?|his|her|their)\s+favou?rite\s+"
+        r"([a-z][a-z\s]{0,20}?)\s+is\s+([^\n\r\.;,!\?]{2,60})",
         text, flags=re.IGNORECASE,
     ):
         subject = m.group(1).strip()
@@ -796,6 +799,19 @@ def _extract_preference_and_opinion_facts(text: str, facts: dict) -> None:
         slot = re.sub(r"[^a-z0-9_]", "", slot)
         if slot not in facts and value:
             facts[slot] = ExtractedFact(slot, value, _norm_text(value))
+
+    # "I like X" / "I love X" (for concrete things, not verbs)
+    if "likes" not in facts:
+        m = re.search(
+            r"\bi (?:like|love|enjoy|am into|am a fan of)\s+"
+            r"([^\n\r\.;!\?]{2,60}?)(?:\.|;|!|\s*$)",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            val = m.group(1).strip()
+            # Skip verb phrases ("I like to code") — keep noun phrases
+            if not re.match(r"^to\s+", val, re.IGNORECASE):
+                facts["likes"] = ExtractedFact("likes", val, _norm_text(val))
 
     # "I prefer X" / "I prefer X over Y"
     if "preference" not in facts:
@@ -982,6 +998,76 @@ def _extract_technical_facts(text: str, facts: dict) -> None:
         if m:
             url = m.group(1).strip()
             facts["api_url"] = ExtractedFact("api_url", url, _norm_text(url))
+
+    # Conversational coding patterns:
+    # "I code in Python", "I usually code in TypeScript", "I program in Rust",
+    # "I write Python", "I mostly write Go"
+    _lang_list = (
+        r"Python|Java|JavaScript|TypeScript|Ruby|Go|Rust|"
+        r"C\+\+|C#|Swift|Kotlin|PHP|Perl|Scala|Elixir|Dart|Julia|"
+        r"Lua|Haskell|Clojure|F#|OCaml|Zig|Carbon|Mojo"
+    )
+    if "programming_language" not in facts:
+        m = re.search(
+            r"\bi\s+(?:usually\s+|mostly\s+|primarily\s+|mainly\s+)?"
+            r"(?:code|program|develop|write)\s+(?:in\s+)?"
+            r"(" + _lang_list + r")"
+            r"(?:\s+and\s+(" + _lang_list + r"))?",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            lang = m.group(1).strip()
+            lang2 = m.group(2).strip() if m.group(2) else None
+            val = lang + (f" and {lang2}" if lang2 else "")
+            facts["programming_language"] = ExtractedFact(
+                "programming_language", val, _norm_text(val),
+            )
+
+    # Communication / coding style: "I prefer concise code",
+    # "I like detailed comments", "keep it simple"
+    if "coding_style" not in facts:
+        m = re.search(
+            r"\b(?:i (?:like|prefer|want)|keep it|use)\s+"
+            r"(concise|verbose|detailed|minimal|simple|clean|dry|"
+            r"functional|object[- ]?oriented|OOP|readable|pragmatic|"
+            r"strict|loose|explicit|implicit)\s*(?:code|style|approach)?",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            style = m.group(1).strip()
+            facts["coding_style"] = ExtractedFact(
+                "coding_style", style, _norm_text(style),
+            )
+
+    # Documentation preference: "I need docs", "no docs needed",
+    # "always document", "skip documentation"
+    if "docs_preference" not in facts:
+        m = re.search(
+            r"\b(?:always\s+(?:write|add|include)\s+(?:docs|documentation|docstrings)|"
+            r"(?:no|skip|don'?t need|don'?t want)\s+(?:docs|documentation|docstrings)|"
+            r"(?:docs|documentation)\s+(?:required|needed|not needed|optional|mandatory)|"
+            r"every\s+(?:function|method|class)\s+(?:needs?|should have)\s+(?:a\s+)?(?:docs?tring|documentation))",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            pref = m.group(0).strip()
+            facts["docs_preference"] = ExtractedFact(
+                "docs_preference", pref, _norm_text(pref),
+            )
+
+    # Testing preference: "I use pytest", "we use jest", "prefer unit tests"
+    if "testing" not in facts:
+        m = re.search(
+            r"\b(?:i use|we use|prefer|using)\s+"
+            r"(pytest|jest|mocha|vitest|cypress|playwright|selenium|"
+            r"unittest|rspec|minitest|junit|xunit|nunit|go test)\b",
+            text, flags=re.IGNORECASE,
+        )
+        if m:
+            test_tool = m.group(1).strip()
+            facts["testing"] = ExtractedFact(
+                "testing", test_tool, _norm_text(test_tool),
+            )
 
 
 def _extract_general_knowledge_facts(text: str, facts: dict) -> None:

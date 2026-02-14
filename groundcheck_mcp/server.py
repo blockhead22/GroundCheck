@@ -32,12 +32,14 @@ mcp = FastMCP(
     "groundcheck",
     instructions=(
         "GroundCheck provides trust-weighted memory and hallucination detection. "
-        "Use crt_store_fact when the user states facts. "
-        "Use crt_check_memory before answering questions about the user/project. "
+        "ALWAYS call crt_check_memory at the start of every turn, passing the "
+        "user's latest message as the 'context' parameter — this automatically "
+        "extracts and stores facts without needing a separate crt_store_fact call. "
+        "Use crt_store_fact only for explicit corrections or important facts the "
+        "auto-extractor might miss. "
         "Use crt_verify_output before sending responses that reference stored facts. "
         "Use namespace='global' for personal user facts (name, preferences) that "
-        "should be available across all projects. Use the default namespace for "
-        "project-specific facts (coding style, documentation requirements, tech stack)."
+        "should be available across all projects."
     ),
 )
 
@@ -163,11 +165,16 @@ def crt_check_memory(
     thread_id: str = "default",
     namespace: str = "",
     include_global: bool = True,
+    context: str = "",
 ) -> str:
-    """Query stored facts before answering. Returns memories with trust scores and contradiction warnings.
+    """Query stored facts and passively learn from conversation context.
     
-    Call this before answering questions about the user, their project,
-    or their preferences to ensure your response is grounded in stored facts.
+    Call this at the START of every turn. Pass the user's latest message
+    as 'context' — any facts in it will be automatically extracted and
+    stored. You do NOT need to separately call crt_store_fact for facts
+    that appear in the user's message.
+    
+    Returns existing memories with trust scores and contradiction warnings.
     By default, includes memories from the 'global' namespace so personal
     user facts (name, preferences) are always available.
     
@@ -176,25 +183,71 @@ def crt_check_memory(
         thread_id: Thread/conversation ID.
         namespace: Project scope to query. Leave empty for server default.
         include_global: Whether to also return 'global' namespace memories (default True).
+        context: The user's latest message. Facts are silently extracted and stored.
     """
     ns = namespace or _default_namespace
     store = _get_store()
     verifier = _get_verifier()
 
+    # ── Auto-learning: silently extract and store facts from context ──
+    auto_learned = {}
+    if context and context.strip():
+        extracted = extract_fact_slots(context)
+        if extracted:
+            # Check existing memories to avoid storing duplicates
+            existing = store.get_all(thread_id=thread_id, namespace=ns)
+            existing_texts_lower = {m.text.lower() for m in existing}
+            
+            for slot, fact in extracted.items():
+                # Build a storable sentence from the fact
+                fact_text = f"User's {slot.replace('_', ' ')} is {fact.value}"
+                
+                # Skip if we already have this exact fact
+                if fact_text.lower() not in existing_texts_lower:
+                    # Check if any existing memory already covers this slot
+                    # with the same value (avoid near-duplicates)
+                    already_known = False
+                    for mem in existing:
+                        mem_facts = extract_fact_slots(mem.text)
+                        if slot in mem_facts and mem_facts[slot].normalized == fact.normalized:
+                            already_known = True
+                            break
+                    
+                    if not already_known:
+                        stored = store.store(
+                            text=fact_text,
+                            thread_id=thread_id,
+                            source="inferred",
+                            namespace=ns,
+                        )
+                        auto_learned[slot] = {
+                            "value": fact.value,
+                            "memory_id": stored.id,
+                        }
+
+    # ── Standard memory query ──
     memories = store.query(
         query=query, thread_id=thread_id,
         namespace=ns, include_global=include_global,
     )
 
-    if not memories:
+    if not memories and not auto_learned:
         result = {
             "found": 0,
             "memories": [],
             "contradictions": [],
             "namespace": ns,
+            "auto_learned": auto_learned,
             "note": "No memories stored for this thread yet.",
         }
         return json.dumps(result, indent=2)
+    
+    # Re-query if we just learned something (so new facts appear in results)
+    if auto_learned:
+        memories = store.query(
+            query=query, thread_id=thread_id,
+            namespace=ns, include_global=include_global,
+        )
 
     # Check for internal contradictions among retrieved memories
     combined_text = " ".join(m.text for m in memories)
@@ -203,6 +256,7 @@ def crt_check_memory(
     result = {
         "found": len(memories),
         "namespace": ns,
+        "auto_learned": auto_learned,
         "memories": [
             {
                 "id": m.id,

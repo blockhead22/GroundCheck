@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "groundcheck"
-version = "0.5.0"
+version = "0.5.1"
 description = "Trust-weighted hallucination detection for AI agents. Verify LLM outputs against multiple sources with contradiction awareness. Zero dependencies. Sub-2ms."
 readme = "README.md"
 requires-python = ">=3.9"

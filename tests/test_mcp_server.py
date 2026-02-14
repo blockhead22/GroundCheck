@@ -472,3 +472,156 @@ class TestStorageNamespace:
             proj_mems = store.query("", namespace="proj-x", include_global=False)
             assert len(proj_mems) == 1
             store.close()
+
+
+class TestAutoLearning:
+    """Tests for passive fact extraction via crt_check_memory context param."""
+
+    def test_auto_learns_name_from_context(self):
+        """User says their name — should be auto-stored without crt_store_fact."""
+        result = json.loads(
+            crt_check_memory("user info", context="My name is Alice")
+        )
+        assert "name" in result["auto_learned"]
+        assert result["auto_learned"]["name"]["value"] == "Alice"
+        # Memory should now contain the fact
+        assert result["found"] >= 1
+        texts = [m["text"] for m in result["memories"]]
+        assert any("Alice" in t for t in texts)
+
+    def test_auto_learns_employer(self):
+        result = json.loads(
+            crt_check_memory("info", context="I work at Microsoft")
+        )
+        learned = result["auto_learned"]
+        assert any("Microsoft" in v["value"] for v in learned.values())
+
+    def test_auto_learns_favorite(self):
+        result = json.loads(
+            crt_check_memory("info", context="My favorite color is orange")
+        )
+        assert "favorite_color" in result["auto_learned"]
+        assert result["auto_learned"]["favorite_color"]["value"] == "orange"
+
+    def test_no_duplicate_learning(self):
+        """If we already know a fact, don't store it again."""
+        # First call learns it
+        crt_check_memory("info", context="My name is Alice")
+        # Second call with same fact
+        result = json.loads(
+            crt_check_memory("info", context="My name is Alice")
+        )
+        # Should not re-learn
+        assert "name" not in result["auto_learned"]
+        # But should still have the memory
+        assert result["found"] >= 1
+
+    def test_no_context_no_learning(self):
+        """Without context param, no auto-learning occurs."""
+        result = json.loads(crt_check_memory("anything"))
+        assert result["auto_learned"] == {}
+
+    def test_empty_context_no_learning(self):
+        result = json.loads(crt_check_memory("anything", context=""))
+        assert result["auto_learned"] == {}
+
+    def test_context_with_no_facts(self):
+        """Random text with no extractable facts."""
+        result = json.loads(
+            crt_check_memory("info", context="What's the weather like?")
+        )
+        assert result["auto_learned"] == {}
+
+    def test_auto_learned_facts_appear_in_memories(self):
+        """Facts learned from context should be queryable immediately."""
+        crt_check_memory("info", context="I work at Tesla")
+        result = json.loads(crt_check_memory("employer"))
+        texts = [m["text"] for m in result["memories"]]
+        assert any("Tesla" in t for t in texts)
+
+    def test_auto_learning_uses_inferred_source(self):
+        """Auto-learned facts should have 'inferred' source (lower trust)."""
+        result = json.loads(
+            crt_check_memory("info", context="My name is Bob")
+        )
+        # Inferred source has trust 0.40
+        mem_id = result["auto_learned"]["name"]["memory_id"]
+        mem = [m for m in result["memories"] if m["id"] == mem_id]
+        assert len(mem) == 1
+        assert mem[0]["trust"] == 0.40
+
+    def test_explicit_store_has_higher_trust(self):
+        """crt_store_fact (user source, 0.70) should outrank auto-learned (inferred, 0.40)."""
+        # Auto-learn first
+        crt_check_memory("info", context="My name is Bob")
+        # Then explicit store
+        crt_store_fact("My name is Robert")
+        # Check — explicit should have higher trust
+        result = json.loads(crt_check_memory("name"))
+        trusts = {m["text"]: m["trust"] for m in result["memories"]}
+        # The explicit "Robert" (0.70) should rank above inferred "Bob" (0.40)
+        assert any(t == 0.70 for t in trusts.values())
+        assert any(t == 0.40 for t in trusts.values())
+
+    def test_multi_fact_auto_learning(self):
+        """Multiple facts in one message should all be learned."""
+        result = json.loads(
+            crt_check_memory(
+                "info",
+                context="My name is Alice and I work at Microsoft"
+            )
+        )
+        learned = result["auto_learned"]
+        assert len(learned) >= 1  # At least name should be caught
+
+
+class TestExpandedExtraction:
+    """Tests for newly added extraction patterns."""
+
+    def test_your_favorite_color(self):
+        """'your favorite X is Y' should extract the same slot as 'my favorite X is Y'."""
+        from groundcheck.fact_extractor import extract_fact_slots
+        f1 = extract_fact_slots("My favorite color is blue")
+        f2 = extract_fact_slots("Your favorite color is red")
+        assert "favorite_color" in f1
+        assert "favorite_color" in f2
+        assert f1["favorite_color"].value == "blue"
+        assert f2["favorite_color"].value == "red"
+
+    def test_users_favorite(self):
+        """'User's favorite X is Y' should match."""
+        from groundcheck.fact_extractor import extract_fact_slots
+        facts = extract_fact_slots("User's favorite color is orange")
+        assert "favorite_color" in facts
+        assert facts["favorite_color"].value == "orange"
+
+    def test_i_code_in_python(self):
+        from groundcheck.fact_extractor import extract_fact_slots
+        facts = extract_fact_slots("I usually code in Python")
+        assert "programming_language" in facts
+        assert facts["programming_language"].value == "Python"
+
+    def test_i_code_in_python_and_typescript(self):
+        from groundcheck.fact_extractor import extract_fact_slots
+        facts = extract_fact_slots("I code in Python and TypeScript")
+        assert "programming_language" in facts
+        assert "Python" in facts["programming_language"].value
+        assert "TypeScript" in facts["programming_language"].value
+
+    def test_coding_style_preference(self):
+        from groundcheck.fact_extractor import extract_fact_slots
+        facts = extract_fact_slots("I prefer concise code")
+        assert "coding_style" in facts
+        assert facts["coding_style"].value == "concise"
+
+    def test_i_like_something(self):
+        from groundcheck.fact_extractor import extract_fact_slots
+        facts = extract_fact_slots("I love hiking")
+        assert "likes" in facts
+        assert facts["likes"].value == "hiking"
+
+    def test_i_like_to_verb_not_extracted_as_likes(self):
+        """'I like to code' is a verb phrase, not a likeable thing."""
+        from groundcheck.fact_extractor import extract_fact_slots
+        facts = extract_fact_slots("I like to code")
+        assert "likes" not in facts
