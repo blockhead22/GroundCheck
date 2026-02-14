@@ -253,6 +253,16 @@ def crt_check_memory(
     combined_text = " ".join(m.text for m in memories)
     report = verifier.verify(combined_text, memories, mode="permissive")
 
+    # Reinforce memories that were retrieved (they're alive = trust boost)
+    try:
+        from personal_agent.trust_decay import reinforce_memory
+        for m in memories:
+            reinforce_memory(m.id)
+    except ImportError:
+        pass  # CRT trust_decay not available (standalone mode)
+    except Exception:
+        pass
+
     result = {
         "found": len(memories),
         "namespace": ns,
@@ -319,6 +329,20 @@ def crt_verify_output(
 
     report = verifier.verify(draft, memories, mode=mode)
     result = _report_to_dict(report)
+
+    # Persist findings for the auto-corrector audit trail
+    if not report.passed:
+        try:
+            from personal_agent.auto_fact_checker import schedule_fact_check
+            mem_dicts = [
+                {"text": m.text, "trust": m.trust, "source": m.source, "memory_id": m.id}
+                for m in memories
+            ]
+            schedule_fact_check(thread_id, "[verify_output]", draft, mem_dicts)
+        except ImportError:
+            pass  # CRT auto_fact_checker not available (standalone mode)
+        except Exception:
+            pass
 
     return json.dumps(result, indent=2)
 
