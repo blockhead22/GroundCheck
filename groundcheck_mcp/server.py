@@ -2,6 +2,7 @@
 
 Usage:
     groundcheck-mcp --db .groundcheck/memory.db
+    groundcheck-mcp --db .groundcheck/memory.db --namespace my-project
     
     # Or via Python:
     python -m groundcheck_mcp.server --db .groundcheck/memory.db
@@ -24,6 +25,7 @@ logger = logging.getLogger("groundcheck-mcp")
 # Global state
 _store: Optional[MemoryStore] = None
 _verifier: Optional[GroundCheck] = None
+_default_namespace: str = "default"
 
 # Create the FastMCP server
 mcp = FastMCP(
@@ -32,7 +34,10 @@ mcp = FastMCP(
         "GroundCheck provides trust-weighted memory and hallucination detection. "
         "Use crt_store_fact when the user states facts. "
         "Use crt_check_memory before answering questions about the user/project. "
-        "Use crt_verify_output before sending responses that reference stored facts."
+        "Use crt_verify_output before sending responses that reference stored facts. "
+        "Use namespace='global' for personal user facts (name, preferences) that "
+        "should be available across all projects. Use the default namespace for "
+        "project-specific facts (coding style, documentation requirements, tech stack)."
     ),
 )
 
@@ -87,6 +92,7 @@ def crt_store_fact(
     text: str,
     source: str = "user",
     thread_id: str = "default",
+    namespace: str = "",
 ) -> str:
     """Store a user fact into persistent memory with contradiction detection.
     
@@ -98,15 +104,19 @@ def crt_store_fact(
         text: The fact to store (e.g. 'User works at Microsoft')
         source: Source of the fact — user|document|code|inferred. Affects trust score.
         thread_id: Thread/conversation ID for memory isolation.
+        namespace: Project scope. Use 'global' for personal user facts
+            (name, preferences) that should be available in every project.
+            Leave empty to use the server's default namespace.
     """
+    ns = namespace or _default_namespace
     store = _get_store()
     verifier = _get_verifier()
 
     # Store the new memory
-    new_mem = store.store(text=text, thread_id=thread_id, source=source)
+    new_mem = store.store(text=text, thread_id=thread_id, source=source, namespace=ns)
 
     # Get all memories for contradiction check (INCLUDING the new one)
-    all_memories = store.get_all(thread_id=thread_id)
+    all_memories = store.get_all(thread_id=thread_id, namespace=ns)
     
     # Extract facts from the new text
     new_facts = extract_fact_slots(text)
@@ -137,6 +147,7 @@ def crt_store_fact(
         "text": new_mem.text,
         "trust": new_mem.trust,
         "source": source,
+        "namespace": ns,
         "facts_extracted": {k: v.value for k, v in new_facts.items()} if new_facts else {},
         "total_memories": len(all_memories),
         "contradictions": contradictions,
@@ -150,26 +161,37 @@ def crt_store_fact(
 def crt_check_memory(
     query: str,
     thread_id: str = "default",
+    namespace: str = "",
+    include_global: bool = True,
 ) -> str:
     """Query stored facts before answering. Returns memories with trust scores and contradiction warnings.
     
     Call this before answering questions about the user, their project,
     or their preferences to ensure your response is grounded in stored facts.
+    By default, includes memories from the 'global' namespace so personal
+    user facts (name, preferences) are always available.
     
     Args:
         query: What to search for in memory (e.g. 'database technology', 'employer')
         thread_id: Thread/conversation ID.
+        namespace: Project scope to query. Leave empty for server default.
+        include_global: Whether to also return 'global' namespace memories (default True).
     """
+    ns = namespace or _default_namespace
     store = _get_store()
     verifier = _get_verifier()
 
-    memories = store.query(query=query, thread_id=thread_id)
+    memories = store.query(
+        query=query, thread_id=thread_id,
+        namespace=ns, include_global=include_global,
+    )
 
     if not memories:
         result = {
             "found": 0,
             "memories": [],
             "contradictions": [],
+            "namespace": ns,
             "note": "No memories stored for this thread yet.",
         }
         return json.dumps(result, indent=2)
@@ -180,12 +202,14 @@ def crt_check_memory(
 
     result = {
         "found": len(memories),
+        "namespace": ns,
         "memories": [
             {
                 "id": m.id,
                 "text": m.text,
                 "trust": m.trust,
                 "timestamp": m.timestamp,
+                "namespace": (m.metadata or {}).get("namespace", ns),
             }
             for m in memories
         ],
@@ -208,6 +232,8 @@ def crt_verify_output(
     draft: str,
     thread_id: str = "default",
     mode: str = "strict",
+    namespace: str = "",
+    include_global: bool = True,
 ) -> str:
     """Verify your draft response against stored memories before sending it.
     
@@ -218,11 +244,16 @@ def crt_verify_output(
         draft: The draft response text to verify.
         thread_id: Thread/conversation ID.
         mode: 'strict' rewrites hallucinations; 'permissive' reports only.
+        namespace: Project scope. Leave empty for server default.
+        include_global: Whether to also verify against 'global' namespace (default True).
     """
+    ns = namespace or _default_namespace
     store = _get_store()
     verifier = _get_verifier()
 
-    memories = store.get_all(thread_id=thread_id)
+    memories = store.get_all(
+        thread_id=thread_id, namespace=ns, include_global=include_global,
+    )
 
     if not memories:
         result = {
@@ -247,6 +278,17 @@ def main():
         help="Path to SQLite database for persistent memory (default: .groundcheck/memory.db)",
     )
     parser.add_argument(
+        "--namespace", "-n",
+        default="default",
+        help=(
+            "Default namespace for this server instance. "
+            "Use a project name (e.g. 'my-app') so each project gets "
+            "its own memory scope. User-level facts stored with "
+            "namespace='global' are visible across all projects. "
+            "(default: 'default')"
+        ),
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose logging",
@@ -258,10 +300,13 @@ def main():
     else:
         logging.basicConfig(level=logging.WARNING)
 
-    # Initialize global store with the specified DB path
-    global _store
+    # Initialize global store and namespace
+    global _store, _default_namespace
     _store = MemoryStore(args.db)
-    logger.info(f"GroundCheck MCP server started with db={args.db}")
+    _default_namespace = args.namespace
+    logger.info(
+        f"GroundCheck MCP server started with db={args.db}, namespace={args.namespace}"
+    )
 
     # Run via stdio (standard for MCP)
     mcp.run(transport="stdio")
