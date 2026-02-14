@@ -27,3 +27,14 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Databases and user data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.groundcheck/
+
+# Environment variables
+.env
+.env.local
