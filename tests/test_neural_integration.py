@@ -39,9 +39,9 @@ class TestNeuralParameter:
         assert v.hybrid_extractor is None
         assert v.semantic_contradiction_detector is None
 
-    def test_neural_true_default(self):
+    def test_neural_false_default(self):
         v = GroundCheck()
-        assert v.neural is True
+        assert v.neural is False
 
     @requires_neural
     def test_neural_true_creates_matcher(self):

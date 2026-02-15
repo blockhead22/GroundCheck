@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "groundcheck"
-version = "0.5.1"
+version = "1.0.0"
 description = "Trust-weighted hallucination detection for AI agents. Verify LLM outputs against multiple sources with contradiction awareness. Zero dependencies. Sub-2ms."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -25,7 +25,7 @@ keywords = [
     "fact-checking",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -62,6 +62,7 @@ dev = [
 ]
 
 [project.scripts]
+groundcheck = "groundcheck.cli:main"
 groundcheck-mcp = "groundcheck_mcp.server:main"
 
 [tool.setuptools.packages.find]

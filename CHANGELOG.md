@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.0.0] - 2026-02-12
+
+### Added
+- **CLI** — `groundcheck verify "text" --memories file.json` and `groundcheck extract "text"` commands. Registered as `groundcheck` entry point.
+- **`groundcheck_list` MCP tool** — browse all stored memories with trust scores, sorted by trust.
+- **`groundcheck_delete` MCP tool** — delete individual memories, clear threads, or wipe namespaces. Requires `confirm=True` safety check.
+- **Latency benchmark** (`benchmarks/latency.py`) — reproducible performance numbers across 5 scenarios (simple verify, complex verify, regex extraction, knowledge extraction, large memory set).
+- **LangChain integration example** (`examples/langchain_grounded_chain.py`) — standalone verification, RAG chain post-processing, and custom tool registration.
+
+### Changed
+- **`neural=False` is now the default** — `GroundCheck()` ships zero-dependency by default. Pass `neural=True` explicitly for paraphrase matching (requires `groundcheck[neural]`).
+- **MCP tools renamed** — `crt_store_fact` → `groundcheck_store`, `crt_check_memory` → `groundcheck_check`, `crt_verify_output` → `groundcheck_verify`. Old names are removed.
+- **Decoupled from CRT** — removed `personal_agent.trust_decay` and `personal_agent.auto_fact_checker` imports from MCP server. Trust reinforcement now handled internally via `MemoryStore.update_trust()`. Audit trail uses standard logging.
+- **Development Status** classifier upgraded from "4 - Beta" to "5 - Production/Stable".
+
+### Fixed
+- README: removed stale "1.17ms mean" benchmark claim, replaced with honest benchmark instructions. Updated MCP tool names. Added CLI and Three-Tier Extraction documentation.
+- CHANGELOG: filled gap for v0.5.0 and v0.5.1 releases that were previously undocumented.
+
+## [0.5.1] - 2026-02-11
+
+### Added
+- **Auto-learning from conversation context** — `crt_check_memory` now accepts a `context` parameter. Any facts in the user's message are silently extracted and stored without needing a separate `crt_store_fact` call.
+- **Trust reinforcement** — memories that are retrieved gain a small trust boost, rewarding frequently-accessed facts.
+- **Fact-check audit trail hooks** — when `crt_verify_output` detects hallucinations, findings are optionally persisted for downstream audit.
+
+## [0.5.0] - 2026-02-11
+
+### Added
+- **Namespace-scoped memory** — each MCP server instance can be launched with `--namespace <project>` so memories are isolated per project. Memories stored with `namespace='global'` are visible across all projects.
+- `list_namespaces()` and `clear_namespace()` storage methods.
+- `include_global` parameter on `query` and `get_all` to always surface user-level facts.
+- Namespace migration for existing databases (automatic column addition).
+
+### Security
+- Removed committed `memory.db` from git history.
+- Added `.env` and `*.db` to `.gitignore`.
+
 ## [0.4.0] - 2026-02-11
 
 ### Added

@@ -10,9 +10,9 @@ pytest.importorskip("mcp", reason="mcp package requires Python 3.10+")
 from groundcheck_mcp.storage import MemoryStore
 from groundcheck_mcp.server import (
     _get_verifier,
-    crt_store_fact,
-    crt_check_memory,
-    crt_verify_output,
+    groundcheck_store,
+    groundcheck_check,
+    groundcheck_verify,
     _store,
 )
 import groundcheck_mcp.server as server_module
@@ -30,19 +30,19 @@ def fresh_store():
 
 class TestStoreFact:
     def test_basic_store(self):
-        result = json.loads(crt_store_fact("User works at Microsoft"))
+        result = json.loads(groundcheck_store("User works at Microsoft"))
         assert result["stored"] is True
         assert result["trust"] == 0.70
         assert "employer" in result["facts_extracted"] or result["facts_extracted"]
         assert result["has_contradiction"] is False
 
     def test_store_with_source_trust(self):
-        result = json.loads(crt_store_fact("Project uses PostgreSQL", source="code"))
+        result = json.loads(groundcheck_store("Project uses PostgreSQL", source="code"))
         assert result["trust"] == 0.80  # code source = 0.80
 
     def test_contradiction_detection(self):
-        crt_store_fact("User works at Microsoft")
-        result = json.loads(crt_store_fact("User works at Amazon"))
+        groundcheck_store("User works at Microsoft")
+        result = json.loads(groundcheck_store("User works at Amazon"))
         assert result["stored"] is True
         assert result["has_contradiction"] is True
         assert len(result["contradictions"]) > 0
@@ -50,20 +50,20 @@ class TestStoreFact:
         assert c["slot"] == "employer"
 
     def test_no_false_contradiction_on_different_slots(self):
-        crt_store_fact("User works at Microsoft")
-        result = json.loads(crt_store_fact("User lives in Seattle"))
+        groundcheck_store("User works at Microsoft")
+        result = json.loads(groundcheck_store("User lives in Seattle"))
         assert result["has_contradiction"] is False
 
     def test_multiple_facts_stored(self):
-        crt_store_fact("User is named Alice")
-        crt_store_fact("User lives in Seattle")
-        result = json.loads(crt_store_fact("User works at Google"))
+        groundcheck_store("User is named Alice")
+        groundcheck_store("User lives in Seattle")
+        result = json.loads(groundcheck_store("User works at Google"))
         assert result["total_memories"] == 3
 
     def test_thread_isolation(self):
-        crt_store_fact("User works at Microsoft", thread_id="thread_a")
+        groundcheck_store("User works at Microsoft", thread_id="thread_a")
         result = json.loads(
-            crt_store_fact("User works at Amazon", thread_id="thread_b")
+            groundcheck_store("User works at Amazon", thread_id="thread_b")
         )
         # Different threads — should NOT detect contradiction
         assert result["has_contradiction"] is False
@@ -71,83 +71,83 @@ class TestStoreFact:
 
 class TestCheckMemory:
     def test_empty_memory(self):
-        result = json.loads(crt_check_memory("anything"))
+        result = json.loads(groundcheck_check("anything"))
         assert result["found"] == 0
         assert "No memories" in result["note"]
 
     def test_returns_stored_facts(self):
-        crt_store_fact("User works at Microsoft")
-        crt_store_fact("User lives in Seattle")
-        result = json.loads(crt_check_memory("employer"))
+        groundcheck_store("User works at Microsoft")
+        groundcheck_store("User lives in Seattle")
+        result = json.loads(groundcheck_check("employer"))
         assert result["found"] == 2
         texts = [m["text"] for m in result["memories"]]
         assert "User works at Microsoft" in texts
 
     def test_detects_contradictions_in_memory(self):
-        crt_store_fact("User works at Microsoft")
-        crt_store_fact("User works at Amazon")
-        result = json.loads(crt_check_memory("employer"))
+        groundcheck_store("User works at Microsoft")
+        groundcheck_store("User works at Amazon")
+        result = json.loads(groundcheck_check("employer"))
         assert result["found"] == 2
         # Should flag the employer contradiction
         assert len(result["contradictions"]) > 0
 
     def test_thread_scoping(self):
-        crt_store_fact("User works at Microsoft", thread_id="a")
-        crt_store_fact("User lives in Paris", thread_id="b")
-        result = json.loads(crt_check_memory("anything", thread_id="a"))
+        groundcheck_store("User works at Microsoft", thread_id="a")
+        groundcheck_store("User lives in Paris", thread_id="b")
+        result = json.loads(groundcheck_check("anything", thread_id="a"))
         assert result["found"] == 1
 
 
 class TestVerifyOutput:
     def test_pass_when_grounded(self):
-        crt_store_fact("User works at Microsoft")
+        groundcheck_store("User works at Microsoft")
         result = json.loads(
-            crt_verify_output("You work at Microsoft")
+            groundcheck_verify("You work at Microsoft")
         )
         assert result["passed"] is True
 
     def test_fail_on_hallucination(self):
-        crt_store_fact("User works at Microsoft")
+        groundcheck_store("User works at Microsoft")
         result = json.loads(
-            crt_verify_output("You work at Amazon")
+            groundcheck_verify("You work at Amazon")
         )
         assert result["passed"] is False
         assert "Amazon" in result["hallucinations"]
 
     def test_correction_in_strict_mode(self):
-        crt_store_fact("User works at Microsoft")
+        groundcheck_store("User works at Microsoft")
         result = json.loads(
-            crt_verify_output("You work at Amazon", mode="strict")
+            groundcheck_verify("You work at Amazon", mode="strict")
         )
         assert result["corrected"] is not None
         assert "Microsoft" in result["corrected"]
 
     def test_no_correction_in_permissive_mode(self):
-        crt_store_fact("User works at Microsoft")
+        groundcheck_store("User works at Microsoft")
         result = json.loads(
-            crt_verify_output("You work at Amazon", mode="permissive")
+            groundcheck_verify("You work at Amazon", mode="permissive")
         )
         assert result["corrected"] is None
 
     def test_empty_memory_passes(self):
-        result = json.loads(crt_verify_output("You work at anything"))
+        result = json.loads(groundcheck_verify("You work at anything"))
         assert result["passed"] is True
         assert result["confidence"] == 0.0
 
     def test_multi_fact_verification(self):
-        crt_store_fact("User works at Microsoft")
-        crt_store_fact("User lives in Seattle")
+        groundcheck_store("User works at Microsoft")
+        groundcheck_store("User lives in Seattle")
         result = json.loads(
-            crt_verify_output("You work at Microsoft and live in Seattle")
+            groundcheck_verify("You work at Microsoft and live in Seattle")
         )
         assert result["passed"] is True
         assert result["confidence"] > 0.5
 
     def test_partial_hallucination(self):
-        crt_store_fact("User works at Microsoft")
-        crt_store_fact("User lives in Seattle")
+        groundcheck_store("User works at Microsoft")
+        groundcheck_store("User lives in Seattle")
         result = json.loads(
-            crt_verify_output("You work at Amazon and live in Seattle")
+            groundcheck_verify("You work at Amazon and live in Seattle")
         )
         assert result["passed"] is False
         assert "Amazon" in result["hallucinations"]
@@ -207,46 +207,46 @@ class TestEndToEnd:
 
     def test_full_agent_workflow(self):
         # Agent stores facts from user conversation
-        r1 = json.loads(crt_store_fact("My name is Alice"))
+        r1 = json.loads(groundcheck_store("My name is Alice"))
         assert r1["stored"]
 
-        r2 = json.loads(crt_store_fact("I work at Microsoft"))
+        r2 = json.loads(groundcheck_store("I work at Microsoft"))
         assert r2["stored"]
 
-        r3 = json.loads(crt_store_fact("I live in Seattle"))
+        r3 = json.loads(groundcheck_store("I live in Seattle"))
         assert r3["stored"]
 
         # Agent checks memory before responding
-        mem = json.loads(crt_check_memory("user info"))
+        mem = json.loads(groundcheck_check("user info"))
         assert mem["found"] == 3
 
         # Agent drafts a response and verifies it
         draft = "Hi Alice! Since you work at Microsoft in Seattle..."
-        verified = json.loads(crt_verify_output(draft))
+        verified = json.loads(groundcheck_verify(draft))
         assert verified["passed"] is True
 
         # Agent drafts a WRONG response
         bad_draft = "Hi Bob! Since you work at Amazon..."
-        bad_result = json.loads(crt_verify_output(bad_draft))
+        bad_result = json.loads(groundcheck_verify(bad_draft))
         assert bad_result["passed"] is False
         assert len(bad_result["hallucinations"]) > 0
 
     def test_contradiction_workflow(self):
         # User says one thing
-        crt_store_fact("I work at Microsoft")
+        groundcheck_store("I work at Microsoft")
 
         # Later, user says something contradictory
-        r = json.loads(crt_store_fact("I work at Amazon"))
+        r = json.loads(groundcheck_store("I work at Amazon"))
         assert r["has_contradiction"] is True
         assert r["contradictions"][0]["slot"] == "employer"
 
         # Memory check should also flag this
-        mem = json.loads(crt_check_memory("employer"))
+        mem = json.loads(groundcheck_check("employer"))
         assert len(mem["contradictions"]) > 0
 
         # Verification should handle the contradiction
         result = json.loads(
-            crt_verify_output("You work at Microsoft")
+            groundcheck_verify("You work at Microsoft")
         )
         # Should flag requires_disclosure since there's contradicting info
         # (the exact behavior depends on trust scores and thresholds)
@@ -258,22 +258,22 @@ class TestNamespaceIsolation:
 
     def test_store_with_namespace(self):
         result = json.loads(
-            crt_store_fact("Project uses React", namespace="my-app")
+            groundcheck_store("Project uses React", namespace="my-app")
         )
         assert result["stored"] is True
         assert result["namespace"] == "my-app"
 
     def test_namespace_isolation_between_projects(self):
         # Store facts in two different project namespaces
-        crt_store_fact("Enforce strict linting", namespace="production")
-        crt_store_fact("No docs needed", namespace="playground")
+        groundcheck_store("Enforce strict linting", namespace="production")
+        groundcheck_store("No docs needed", namespace="playground")
 
         # Each namespace sees only its own memories (plus global)
         prod = json.loads(
-            crt_check_memory("linting", namespace="production", include_global=False)
+            groundcheck_check("linting", namespace="production", include_global=False)
         )
         play = json.loads(
-            crt_check_memory("docs", namespace="playground", include_global=False)
+            groundcheck_check("docs", namespace="playground", include_global=False)
         )
 
         assert prod["found"] == 1
@@ -284,14 +284,14 @@ class TestNamespaceIsolation:
 
     def test_global_facts_visible_everywhere(self):
         # Store a personal fact in global namespace
-        crt_store_fact("User's name is Nick", namespace="global")
+        groundcheck_store("User's name is Nick", namespace="global")
 
         # Store a project fact in a project namespace
-        crt_store_fact("Uses PostgreSQL", namespace="my-app")
+        groundcheck_store("Uses PostgreSQL", namespace="my-app")
 
         # Query from the project namespace — should see both
         result = json.loads(
-            crt_check_memory("info", namespace="my-app", include_global=True)
+            groundcheck_check("info", namespace="my-app", include_global=True)
         )
         assert result["found"] == 2
         texts = [m["text"] for m in result["memories"]]
@@ -299,23 +299,23 @@ class TestNamespaceIsolation:
         assert "Uses PostgreSQL" in texts
 
     def test_global_excluded_when_disabled(self):
-        crt_store_fact("User's name is Nick", namespace="global")
-        crt_store_fact("Uses PostgreSQL", namespace="my-app")
+        groundcheck_store("User's name is Nick", namespace="global")
+        groundcheck_store("Uses PostgreSQL", namespace="my-app")
 
         result = json.loads(
-            crt_check_memory("info", namespace="my-app", include_global=False)
+            groundcheck_check("info", namespace="my-app", include_global=False)
         )
         assert result["found"] == 1
         assert result["memories"][0]["text"] == "Uses PostgreSQL"
 
     def test_verify_uses_namespace(self):
         # Store facts in different namespaces
-        crt_store_fact("User works at Microsoft", namespace="global")
-        crt_store_fact("Use strict TypeScript", namespace="prod-app")
+        groundcheck_store("User works at Microsoft", namespace="global")
+        groundcheck_store("Use strict TypeScript", namespace="prod-app")
 
         # Verify in prod-app namespace — should see global facts too
         result = json.loads(
-            crt_verify_output(
+            groundcheck_verify(
                 "You work at Microsoft", namespace="prod-app"
             )
         )
@@ -323,9 +323,9 @@ class TestNamespaceIsolation:
 
     def test_contradiction_scoped_to_namespace(self):
         # Same slot in different namespaces — NOT a contradiction
-        crt_store_fact("User works at Microsoft", namespace="project-a")
+        groundcheck_store("User works at Microsoft", namespace="project-a")
         result = json.loads(
-            crt_store_fact("User works at Amazon", namespace="project-b")
+            groundcheck_store("User works at Amazon", namespace="project-b")
         )
         # Different namespaces — should NOT detect contradiction
         assert result["has_contradiction"] is False
@@ -336,23 +336,23 @@ class TestNamespaceIsolation:
         old_ns = srv._default_namespace
         try:
             srv._default_namespace = "configured-project"
-            result = json.loads(crt_store_fact("test fact"))
+            result = json.loads(groundcheck_store("test fact"))
             assert result["namespace"] == "configured-project"
         finally:
             srv._default_namespace = old_ns
 
     def test_memory_id_includes_namespace(self):
         result = json.loads(
-            crt_store_fact("test fact", namespace="my-ns")
+            groundcheck_store("test fact", namespace="my-ns")
         )
         assert "my-ns" in result["memory_id"]
 
     def test_each_memory_reports_namespace(self):
-        crt_store_fact("Fact A", namespace="global")
-        crt_store_fact("Fact B", namespace="project-x")
+        groundcheck_store("Fact A", namespace="global")
+        groundcheck_store("Fact B", namespace="project-x")
 
         result = json.loads(
-            crt_check_memory("fact", namespace="project-x", include_global=True)
+            groundcheck_check("fact", namespace="project-x", include_global=True)
         )
         namespaces = {m["namespace"] for m in result["memories"]}
         assert "global" in namespaces
@@ -475,12 +475,12 @@ class TestStorageNamespace:
 
 
 class TestAutoLearning:
-    """Tests for passive fact extraction via crt_check_memory context param."""
+    """Tests for passive fact extraction via groundcheck_check context param."""
 
     def test_auto_learns_name_from_context(self):
-        """User says their name — should be auto-stored without crt_store_fact."""
+        """User says their name — should be auto-stored without groundcheck_store."""
         result = json.loads(
-            crt_check_memory("user info", context="My name is Alice")
+            groundcheck_check("user info", context="My name is Alice")
         )
         assert "name" in result["auto_learned"]
         assert result["auto_learned"]["name"]["value"] == "Alice"
@@ -491,14 +491,14 @@ class TestAutoLearning:
 
     def test_auto_learns_employer(self):
         result = json.loads(
-            crt_check_memory("info", context="I work at Microsoft")
+            groundcheck_check("info", context="I work at Microsoft")
         )
         learned = result["auto_learned"]
         assert any("Microsoft" in v["value"] for v in learned.values())
 
     def test_auto_learns_favorite(self):
         result = json.loads(
-            crt_check_memory("info", context="My favorite color is orange")
+            groundcheck_check("info", context="My favorite color is orange")
         )
         assert "favorite_color" in result["auto_learned"]
         assert result["auto_learned"]["favorite_color"]["value"] == "orange"
@@ -506,10 +506,10 @@ class TestAutoLearning:
     def test_no_duplicate_learning(self):
         """If we already know a fact, don't store it again."""
         # First call learns it
-        crt_check_memory("info", context="My name is Alice")
+        groundcheck_check("info", context="My name is Alice")
         # Second call with same fact
         result = json.loads(
-            crt_check_memory("info", context="My name is Alice")
+            groundcheck_check("info", context="My name is Alice")
         )
         # Should not re-learn
         assert "name" not in result["auto_learned"]
@@ -518,31 +518,31 @@ class TestAutoLearning:
 
     def test_no_context_no_learning(self):
         """Without context param, no auto-learning occurs."""
-        result = json.loads(crt_check_memory("anything"))
+        result = json.loads(groundcheck_check("anything"))
         assert result["auto_learned"] == {}
 
     def test_empty_context_no_learning(self):
-        result = json.loads(crt_check_memory("anything", context=""))
+        result = json.loads(groundcheck_check("anything", context=""))
         assert result["auto_learned"] == {}
 
     def test_context_with_no_facts(self):
         """Random text with no extractable facts."""
         result = json.loads(
-            crt_check_memory("info", context="What's the weather like?")
+            groundcheck_check("info", context="What's the weather like?")
         )
         assert result["auto_learned"] == {}
 
     def test_auto_learned_facts_appear_in_memories(self):
         """Facts learned from context should be queryable immediately."""
-        crt_check_memory("info", context="I work at Tesla")
-        result = json.loads(crt_check_memory("employer"))
+        groundcheck_check("info", context="I work at Tesla")
+        result = json.loads(groundcheck_check("employer"))
         texts = [m["text"] for m in result["memories"]]
         assert any("Tesla" in t for t in texts)
 
     def test_auto_learning_uses_inferred_source(self):
         """Auto-learned facts should have 'inferred' source (lower trust)."""
         result = json.loads(
-            crt_check_memory("info", context="My name is Bob")
+            groundcheck_check("info", context="My name is Bob")
         )
         # Inferred source has trust 0.40
         mem_id = result["auto_learned"]["name"]["memory_id"]
@@ -551,22 +551,23 @@ class TestAutoLearning:
         assert mem[0]["trust"] == 0.40
 
     def test_explicit_store_has_higher_trust(self):
-        """crt_store_fact (user source, 0.70) should outrank auto-learned (inferred, 0.40)."""
+        """groundcheck_store (user source, 0.70) should outrank auto-learned (inferred, 0.40)."""
         # Auto-learn first
-        crt_check_memory("info", context="My name is Bob")
+        groundcheck_check("info", context="My name is Bob")
         # Then explicit store
-        crt_store_fact("My name is Robert")
+        groundcheck_store("My name is Robert")
         # Check — explicit should have higher trust
-        result = json.loads(crt_check_memory("name"))
+        result = json.loads(groundcheck_check("name"))
         trusts = {m["text"]: m["trust"] for m in result["memories"]}
-        # The explicit "Robert" (0.70) should rank above inferred "Bob" (0.40)
-        assert any(t == 0.70 for t in trusts.values())
-        assert any(t == 0.40 for t in trusts.values())
+        # The explicit "Robert" (0.70+) should rank above inferred "Bob" (0.40+)
+        # Trust reinforcement may bump values by +0.01 per retrieval
+        assert any(t >= 0.70 for t in trusts.values())
+        assert any(0.40 <= t < 0.50 for t in trusts.values())
 
     def test_multi_fact_auto_learning(self):
         """Multiple facts in one message should all be learned."""
         result = json.loads(
-            crt_check_memory(
+            groundcheck_check(
                 "info",
                 context="My name is Alice and I work at Microsoft"
             )

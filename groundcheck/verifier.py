@@ -116,15 +116,16 @@ class GroundCheck:
     # Only memories below 0.75 are considered unreliable noise
     MINIMUM_TRUST_FOR_DISCLOSURE = 0.75
     
-    def __init__(self, neural: bool = True):
+    def __init__(self, neural: bool = False):
         """Initialize the GroundCheck verifier.
         
         Args:
             neural: Enable neural/semantic matching for paraphrase detection.
-                Requires ``pip install groundcheck[neural]``.  When True (the
-                default), GroundCheck will attempt to load sentence-transformers
-                and NLI models lazily on first use.  When False, only regex and
-                fuzzy matching are used (zero-dependency, sub-2 ms).
+                Requires ``pip install groundcheck[neural]``.  When True,
+                GroundCheck will attempt to load sentence-transformers
+                and NLI models lazily on first use.  When False (the
+                default), only regex and fuzzy matching are used
+                (zero-dependency, sub-2 ms extraction).
         """
         self.memory_claim_regex = create_memory_claim_regex()
         self.neural = neural

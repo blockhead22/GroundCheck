@@ -32,12 +32,14 @@ mcp = FastMCP(
     "groundcheck",
     instructions=(
         "GroundCheck provides trust-weighted memory and hallucination detection. "
-        "ALWAYS call crt_check_memory at the start of every turn, passing the "
+        "ALWAYS call groundcheck_check at the start of every turn, passing the "
         "user's latest message as the 'context' parameter — this automatically "
-        "extracts and stores facts without needing a separate crt_store_fact call. "
-        "Use crt_store_fact only for explicit corrections or important facts the "
+        "extracts and stores facts without needing a separate groundcheck_store call. "
+        "Use groundcheck_store only for explicit corrections or important facts the "
         "auto-extractor might miss. "
-        "Use crt_verify_output before sending responses that reference stored facts. "
+        "Use groundcheck_verify before sending responses that reference stored facts. "
+        "Use groundcheck_list to browse stored memories. "
+        "Use groundcheck_delete to remove outdated or incorrect memories. "
         "Use namespace='global' for personal user facts (name, preferences) that "
         "should be available across all projects."
     ),
@@ -90,7 +92,7 @@ def _report_to_dict(report: VerificationReport) -> dict:
 
 
 @mcp.tool()
-def crt_store_fact(
+def groundcheck_store(
     text: str,
     source: str = "user",
     thread_id: str = "default",
@@ -160,7 +162,7 @@ def crt_store_fact(
 
 
 @mcp.tool()
-def crt_check_memory(
+def groundcheck_check(
     query: str,
     thread_id: str = "default",
     namespace: str = "",
@@ -253,15 +255,13 @@ def crt_check_memory(
     combined_text = " ".join(m.text for m in memories)
     report = verifier.verify(combined_text, memories, mode="permissive")
 
-    # Reinforce memories that were retrieved (they're alive = trust boost)
-    try:
-        from personal_agent.trust_decay import reinforce_memory
-        for m in memories:
-            reinforce_memory(m.id)
-    except ImportError:
-        pass  # CRT trust_decay not available (standalone mode)
-    except Exception:
-        pass
+    # Trust reinforcement: retrieved memories get a small boost
+    for m in memories:
+        try:
+            new_trust = min(1.0, m.trust + 0.01)
+            store.update_trust(m.id, new_trust)
+        except Exception:
+            pass
 
     result = {
         "found": len(memories),
@@ -292,7 +292,7 @@ def crt_check_memory(
 
 
 @mcp.tool()
-def crt_verify_output(
+def groundcheck_verify(
     draft: str,
     thread_id: str = "default",
     mode: str = "strict",
@@ -330,21 +330,114 @@ def crt_verify_output(
     report = verifier.verify(draft, memories, mode=mode)
     result = _report_to_dict(report)
 
-    # Persist findings for the auto-corrector audit trail
+    # Log verification failures for audit trail
     if not report.passed:
-        try:
-            from personal_agent.auto_fact_checker import schedule_fact_check
-            mem_dicts = [
-                {"text": m.text, "trust": m.trust, "source": m.source, "memory_id": m.id}
-                for m in memories
-            ]
-            schedule_fact_check(thread_id, "[verify_output]", draft, mem_dicts)
-        except ImportError:
-            pass  # CRT auto_fact_checker not available (standalone mode)
-        except Exception:
-            pass
+        logger.info(
+            "Verification failed: %d hallucinations in thread=%s",
+            len(report.hallucinations), thread_id,
+        )
 
     return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def groundcheck_list(
+    thread_id: str = "default",
+    namespace: str = "",
+    include_global: bool = True,
+) -> str:
+    """List all stored memories for a thread/namespace.
+
+    Returns memories sorted by trust score (highest first) with their IDs,
+    text, trust scores, and timestamps. Use this to inspect what the system
+    remembers about the user or project.
+
+    Args:
+        thread_id: Thread/conversation ID.
+        namespace: Project scope. Leave empty for server default.
+        include_global: Whether to also include 'global' namespace memories (default True).
+    """
+    ns = namespace or _default_namespace
+    store = _get_store()
+
+    memories = store.get_all(
+        thread_id=thread_id, namespace=ns, include_global=include_global,
+    )
+
+    # Sort by trust descending
+    memories.sort(key=lambda m: m.trust, reverse=True)
+
+    namespaces = store.list_namespaces()
+
+    result = {
+        "total": len(memories),
+        "namespace": ns,
+        "available_namespaces": namespaces,
+        "memories": [
+            {
+                "id": m.id,
+                "text": m.text,
+                "trust": m.trust,
+                "source": m.source,
+                "timestamp": m.timestamp,
+                "namespace": (m.metadata or {}).get("namespace", ns),
+            }
+            for m in memories
+        ],
+    }
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def groundcheck_delete(
+    memory_id: str = "",
+    thread_id: str = "",
+    namespace: str = "",
+    confirm: bool = False,
+) -> str:
+    """Delete a specific memory or clear all memories for a thread/namespace.
+
+    To delete a single memory, pass its ``memory_id``. To clear an entire
+    thread, pass ``thread_id`` (optionally scoped by ``namespace``). To
+    clear an entire namespace across all threads, pass only ``namespace``.
+
+    Always requires ``confirm=True`` as a safety check.
+
+    Args:
+        memory_id: ID of a specific memory to delete.
+        thread_id: Delete all memories for this thread.
+        namespace: Scope deletion to this namespace (or delete entire namespace if no thread_id).
+        confirm: Must be True to actually perform the deletion.
+    """
+    if not confirm:
+        return json.dumps({
+            "error": "Set confirm=True to actually delete. This is a safety check.",
+            "deleted": 0,
+        })
+
+    store = _get_store()
+
+    if memory_id:
+        store.delete(memory_id)
+        return json.dumps({"deleted": 1, "memory_id": memory_id})
+
+    if thread_id:
+        ns = namespace or None
+        count = store.clear_thread(thread_id, namespace=ns)
+        return json.dumps({
+            "deleted": count,
+            "thread_id": thread_id,
+            "namespace": namespace or "all",
+        })
+
+    if namespace:
+        count = store.clear_namespace(namespace)
+        return json.dumps({"deleted": count, "namespace": namespace})
+
+    return json.dumps({
+        "error": "Provide memory_id, thread_id, or namespace to specify what to delete.",
+        "deleted": 0,
+    })
 
 
 def main():

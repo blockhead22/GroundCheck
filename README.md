@@ -40,9 +40,29 @@ print(result.corrected)       # "You work at Microsoft and live in Seattle"
 print(result.confidence)      # 0.65
 ```
 
-## What Makes This Different
+## CLI
 
-Other systems treat verification as a binary "is this grounded?" check against a single source. GroundCheck is different:
+```bash
+# Verify text against a memory file
+groundcheck verify "You work at Amazon" --memories memories.json
+
+# Extract facts from text
+groundcheck extract "My name is Alice and I work at Google"
+
+# Show version
+groundcheck version
+```
+
+Memory files are JSON — either a list of objects or `{"memories": [...]}`:
+
+```json
+[
+  {"text": "User works at Microsoft", "trust": 0.9},
+  {"text": "User lives in Seattle", "trust": 0.8}
+]
+```
+
+## What Makes This Different
 
 | | Other systems | GroundCheck |
 |---|---|---|
@@ -51,15 +71,17 @@ Other systems treat verification as a binary "is this grounded?" check against a
 | Contradictions | Not detected | Cross-memory conflict detection with resolution |
 | Correction | Flag only — no fix | Auto-rewrites hallucinations with grounded facts |
 | Temporal | No awareness | `most_recent` vs `most_trusted` resolution |
-| Dependencies | Often torch, transformers, etc. | **Zero** (stdlib only) |
-| Latency | 500ms – 3,000ms+ | **1.17ms mean** |
+| Dependencies | Often torch, transformers, etc. | **Zero** (stdlib only, neural optional) |
+| Latency | 500ms – 3,000ms+ | **Sub-2ms** (regex mode) |
 | Extra LLM calls | Some require 3-5 per check | **Zero** |
 
 ## How It Works
 
 ```
 Generated text + Retrieved memories (with trust scores)
-    → Extract fact claims (universal: any domain, any structure)
+    → Tier 1: Regex fact extraction (15+ named slots)
+    → Tier 1.5: Knowledge-based inference (verb ontology + entity taxonomy)
+    → Tier 2: Neural paraphrase matching (optional)
     → Detect contradictions across memories (dynamic slot tracking)
     → Build grounding map (fuzzy match claims to memories)
     → Check disclosure requirements (trust-weighted)
@@ -97,71 +119,75 @@ result = verifier.verify("You live in Paris", memories, mode="permissive")
 print(result.corrected)  # None — permissive doesn't rewrite
 ```
 
-## Universal Fact Extraction
+## Three-Tier Extraction
 
-GroundCheck v0.2 extracts facts from **any domain** — not just personal profiles. Nine pattern families cover:
+### Tier 1 — Regex (always active)
+15+ named slots (`name`, `employer`, `location`, `age`, etc.) plus 9 universal pattern families:
 
 | Pattern | Example |
 |---|---|
 | Copular (`X is Y`) | "The server is running Ubuntu 22.04" |
-| Possessive (`X has Y`) | "Python has garbage collection" |
 | Non-copular verbs | "Tesla manufactures electric vehicles" |
 | Clause splitting | "Bob is 30, lives in NYC, and works at Google" |
 | Decisions & plans | "We chose Postgres" / "They decided to use Rust" |
 | Requirements | "The app requires Node 18+" |
 | Prescriptive | "Always use HTTPS for API calls" |
-| Numeric | "The latency is 3.5ms" / "Revenue: $4.2 billion" |
-| Named slots | `name`, `employer`, `location`, `age`, `hobby`, etc. |
 
-35+ known exclusive slots with mutual exclusivity knowledge (a person has one employer but many hobbies). **All extracted slots** are tracked for contradictions — including dynamically discovered ones.
+### Tier 1.5 — Knowledge Inference (always active)
+Understands conversational language that regex misses:
 
-## Neural Mode (Optional)
+```python
+from groundcheck import extract_knowledge_facts
 
-For paraphrase handling and semantic matching, install the neural extras:
+facts = extract_knowledge_facts("Yeah we ended up going with Postgres after the whole MySQL disaster")
+# → database: postgres (adoption), mysql (deprecation)
+```
+
+Powered by:
+- **Verb ontology** — 10 semantic categories (adoption, migration, deprecation, tentative…) with ~200 verb phrases
+- **Entity taxonomy** — 22 tech categories with ~500 known entities
+- **Inference rules** — clause decomposition → entity recognition → verb semantics → fact extraction
+
+Combined benchmark (42 sentences, 65 slots): **F1 = 83.2%** (+44% over regex alone).
+
+### Tier 2 — Neural (optional)
 
 ```bash
 pip install groundcheck[neural]
 ```
 
 ```python
-# Explicit control (v0.3.0+)
-verifier = GroundCheck(neural=True)   # Enable paraphrase matching (default)
-verifier = GroundCheck(neural=False)  # Zero-dep, sub-2ms regex only
+verifier = GroundCheck(neural=True)   # Enable paraphrase matching
 
 # Catches paraphrases regex can't:
 memories = [Memory(id="m1", text="User works at Google")]
-result = verifier.verify("Employed by Google", memories)   # ✓ passes
-result = verifier.verify("I live in New York City",        # ✓ matches "NYC"
-         [Memory(id="m2", text="User lives in NYC")])
+result = verifier.verify("Employed by Google", memories)  # ✓ passes
 ```
 
 Models are loaded **lazily** on first use — no startup cost until you need them.
-
-Five matching strategies fire in order: exact → normalization → fuzzy → synonym → embedding.
-NLI-based contradiction refinement filters false positives for dynamically-discovered slots.
-
-| Mode | Paraphrase Accuracy | Latency |
-|------|-------------------|---------|
-| Regex-only (default) | 70% | 1.17ms |
-| Neural | 85-90% | ~15ms |
+Five matching strategies: exact → normalization → fuzzy → synonym → embedding.
+NLI-based contradiction refinement filters false positives.
 
 ## API Reference
 
 ### `GroundCheck`
-- `GroundCheck(neural=True)` — constructor. `neural=True` enables semantic matching (requires `groundcheck[neural]`), `neural=False` for zero-dependency mode.
+- `GroundCheck(neural=False)` — constructor. `neural=False` (default) for zero-dependency sub-2ms mode. `neural=True` enables semantic matching (requires `groundcheck[neural]`).
 - `verify(generated_text, retrieved_memories, mode="strict")` → `VerificationReport`
 - `extract_claims(text)` → `Dict[str, ExtractedFact]`
 - `find_support(claim, memories)` → match info
 
 ### `extract_fact_slots(text)` (standalone function)
-Universal fact extractor — works on any domain text, not just personal facts.
+Universal regex fact extractor — works on any domain text.
 Returns `Dict[str, ExtractedFact]` with dynamically discovered slot names.
+
+### `extract_knowledge_facts(text)` (standalone function)
+Knowledge-based inference extractor using verb ontology and entity taxonomy.
+Returns `List[KnowledgeFact]` with inferred relationships.
 
 ### `VerificationReport`
 - `passed: bool` — did verification pass?
 - `corrected: Optional[str]` — rewritten text (strict mode)
 - `hallucinations: List[str]` — hallucinated values
-- `grounding_map: Dict` — claim → supporting memory
 - `confidence: float` — trust-weighted confidence (0.0-1.0)
 - `contradiction_details: List[ContradictionDetail]` — full conflict info
 - `requires_disclosure: bool` — must the response acknowledge conflicts?
@@ -178,17 +204,6 @@ Returns `Dict[str, ExtractedFact]` with dynamically discovered slot names.
 - `most_trusted_value` — value from highest-trust memory
 - `most_recent_value` — value from most recent memory
 
-## Performance
-
-```
-Benchmark: 1,000 verifications
-Mean latency:  1.17ms
-P95 latency:   2.09ms
-P99 latency:   3.41ms
-Memory: ~2MB RSS
-Dependencies: 0
-```
-
 ## MCP Server (Agent Integration)
 
 GroundCheck ships with an MCP server that gives any AI agent persistent fact memory with contradiction detection. Works with **VS Code Copilot**, **Claude Desktop**, **Cursor**, and any MCP-compatible client.
@@ -204,19 +219,23 @@ Add to your config (VS Code `.vscode/mcp.json`, Claude `claude_desktop_config.js
   "servers": {
     "groundcheck": {
       "command": "groundcheck-mcp",
-      "args": ["--db", ".groundcheck/memory.db"]
+      "args": ["--db", ".groundcheck/memory.db", "--namespace", "my-project"]
     }
   }
 }
 ```
 
-Three tools are exposed:
+Five tools are exposed:
 
 | Tool | When to call | What it does |
 |------|-------------|-------------|
-| `crt_store_fact` | User states a fact | Stores with trust score, detects contradictions |
-| `crt_check_memory` | Before answering about the user | Returns relevant memories with trust scores |
-| `crt_verify_output` | Before sending a response | Catches hallucinations, auto-corrects, scores confidence |
+| `groundcheck_store` | User states a fact | Stores with trust score, detects contradictions |
+| `groundcheck_check` | Start of every turn | Returns relevant memories, auto-learns from context |
+| `groundcheck_verify` | Before sending a response | Catches hallucinations, auto-corrects, scores confidence |
+| `groundcheck_list` | Inspecting memory state | Lists all stored memories with trust scores |
+| `groundcheck_delete` | Removing outdated facts | Deletes specific memories or clears thread/namespace |
+
+Memories are scoped by **namespace** so each project gets its own memory. User-level facts stored with `namespace='global'` are visible across all projects.
 
 **[Full MCP setup guide →](docs/mcp-server.md)**
 

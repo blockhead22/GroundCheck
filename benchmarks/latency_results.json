@@ -1,0 +1,47 @@
+{
+  "simple_verify": {
+    "mean_ms": 2.42,
+    "median_ms": 1.888,
+    "p95_ms": 4.329,
+    "p99_ms": 8.639,
+    "min_ms": 1.347,
+    "max_ms": 58.947,
+    "iterations": 1000
+  },
+  "complex_verify": {
+    "mean_ms": 12.935,
+    "median_ms": 12.132,
+    "p95_ms": 17.903,
+    "p99_ms": 24.261,
+    "min_ms": 9.753,
+    "max_ms": 111.057,
+    "iterations": 1000
+  },
+  "regex_extraction": {
+    "mean_ms": 0.539,
+    "median_ms": 0.484,
+    "p95_ms": 0.85,
+    "p99_ms": 1.141,
+    "min_ms": 0.47,
+    "max_ms": 2.061,
+    "iterations": 1000
+  },
+  "knowledge_extraction": {
+    "mean_ms": 0.684,
+    "median_ms": 0.533,
+    "p95_ms": 1.702,
+    "p99_ms": 2.216,
+    "min_ms": 0.513,
+    "max_ms": 2.806,
+    "iterations": 1000
+  },
+  "large_memory_set_50": {
+    "mean_ms": 25.472,
+    "median_ms": 24.197,
+    "p95_ms": 31.877,
+    "p99_ms": 44.757,
+    "min_ms": 20.733,
+    "max_ms": 112.014,
+    "iterations": 500
+  }
+}
