@@ -87,12 +87,18 @@ class VerificationReport:
     Attributes:
         original: The original generated text
         corrected: Corrected text (if mode="strict"), or None
-        passed: Whether verification passed (no hallucinations or undisclosed contradictions)
-        hallucinations: List of detected hallucinated values
+        passed: Whether verification passed (no hallucinations or undisclosed contradictions).
+            Out-of-scope claims do NOT cause failure — they are unverifiable, not wrong.
+        hallucinations: List of detected hallucinated values (wrong value for a known slot)
+        out_of_scope: List of claim values whose slots have zero coverage in the
+            memory store.  These are *unverifiable*, not supported — the verifier
+            has no opinion on them.
         grounding_map: Mapping from claim to supporting memory ID
-        confidence: Confidence score for the verification (0.0-1.0)
+        confidence: Confidence score based only on *in-scope* facts (0.0-1.0).
+            Out-of-scope facts are excluded from the denominator.
         facts_extracted: Facts extracted from the generated text
-        facts_supported: Facts that were found in memories
+        facts_supported: Facts that were actually grounded in memories
+        facts_out_of_scope: Facts whose slots had no memory coverage at all
         contradicted_claims: Claims that rely on contradicted facts
         contradiction_details: Full contradiction information
         requires_disclosure: True if output should acknowledge contradiction
@@ -102,10 +108,12 @@ class VerificationReport:
     corrected: Optional[str] = None
     passed: bool = True
     hallucinations: List[str] = field(default_factory=list)
+    out_of_scope: List[str] = field(default_factory=list)
     grounding_map: Dict[str, str] = field(default_factory=dict)
     confidence: float = 1.0
     facts_extracted: Dict[str, ExtractedFact] = field(default_factory=dict)
     facts_supported: Dict[str, ExtractedFact] = field(default_factory=dict)
+    facts_out_of_scope: Dict[str, ExtractedFact] = field(default_factory=dict)
     contradicted_claims: List[str] = field(default_factory=list)
     contradiction_details: List['ContradictionDetail'] = field(default_factory=list)
     requires_disclosure: bool = False

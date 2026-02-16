@@ -45,7 +45,8 @@ def test_end_to_end_with_hallucinations():
     
     assert result.passed == False
     assert "Amazon" in result.hallucinations
-    assert "Bob" in result.hallucinations
+    # "Bob" is out-of-scope (no name memory provided), not a hallucination
+    assert "Bob" not in result.hallucinations
     assert "Seattle" not in result.hallucinations
     assert result.corrected is not None
 
@@ -111,7 +112,12 @@ def test_multiple_fact_types():
 
 
 def test_no_memories_provided():
-    """Test behavior when no memories are provided."""
+    """Test behavior when no memories are provided.
+    
+    With no memories, all claims are out-of-scope (unverifiable).
+    passed=True because nothing was contradicted, but nothing is
+    grounded either — facts end up in out_of_scope.
+    """
     verifier = GroundCheck()
     
     result = verifier.verify(
@@ -119,9 +125,12 @@ def test_no_memories_provided():
         []
     )
     
-    assert result.passed == False
-    assert len(result.hallucinations) > 0
-    assert result.confidence == 0.0
+    # No memories → nothing contradicted → passes
+    assert result.passed == True
+    assert len(result.hallucinations) == 0
+    # But claims are out-of-scope, NOT supported
+    assert len(result.out_of_scope) > 0
+    assert len(result.facts_supported) == 0
 
 
 def test_correction_replaces_values():

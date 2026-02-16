@@ -69,6 +69,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         "passed": report.passed,
         "confidence": round(report.confidence, 4),
         "hallucinations": report.hallucinations,
+        "out_of_scope": report.out_of_scope,
         "corrected": report.corrected,
         "facts_extracted": {
             k: {"slot": v.slot, "value": v.value}
@@ -77,6 +78,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
         "facts_supported": {
             k: {"slot": v.slot, "value": v.value}
             for k, v in report.facts_supported.items()
+        },
+        "facts_out_of_scope": {
+            k: {"slot": v.slot, "value": v.value}
+            for k, v in report.facts_out_of_scope.items()
         },
         "contradictions": [
             {

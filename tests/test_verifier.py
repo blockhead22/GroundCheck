@@ -74,13 +74,88 @@ def test_fact_slot_extraction():
 
 
 def test_empty_memories():
-    """Test behavior with no retrieved context."""
+    """Test behavior with no retrieved context.
+    
+    With no memories, all claims are out-of-scope (unverifiable).
+    passed=True because nothing was contradicted, but facts_supported
+    should be empty and out_of_scope should contain the claims.
+    """
     verifier = GroundCheck()
     
     result = verifier.verify("You work at Microsoft", [])
     
-    assert result.passed == False
-    assert "Microsoft" in result.hallucinations
+    # No memories → nothing contradicted → passes
+    assert result.passed == True
+    assert len(result.hallucinations) == 0
+    # But the claim is out-of-scope, NOT supported
+    assert len(result.out_of_scope) > 0
+    assert len(result.facts_supported) == 0
+    assert len(result.facts_out_of_scope) > 0
+
+
+def test_out_of_scope_claims_tracked_separately():
+    """Out-of-scope claims are unverifiable, not supported or hallucinated.
+    
+    If a generated text mentions an attribute that has zero coverage in the
+    memory store, the verifier has no opinion on it.  It should appear in
+    out_of_scope / facts_out_of_scope, NOT in facts_supported or
+    hallucinations.  passed=True (no lies detected), but the caller can
+    inspect out_of_scope to know what wasn't verified.
+    """
+    verifier = GroundCheck()
+    
+    memories = [
+        Memory(id="m1", text="FACT: name = Alex", trust=0.95),
+        Memory(id="m2", text="FACT: location = Denver", trust=0.90),
+    ]
+    
+    # Gravity facts are outside the memory domain
+    result = verifier.verify(
+        "Gravity is a fundamental force that attracts objects with mass toward each other.",
+        memories,
+        mode="strict",
+    )
+    assert result.passed is True
+    assert len(result.hallucinations) == 0
+    # Gravity is out-of-scope, NOT supported
+    assert len(result.out_of_scope) > 0
+    assert len(result.facts_supported) == 0
+    assert "gravity" in result.facts_out_of_scope
+    assert "gravity" not in result.facts_supported
+    
+    # In-scope hallucinations still caught
+    result2 = verifier.verify(
+        "Your name is Bob.",
+        memories,
+        mode="strict",
+    )
+    assert result2.passed is False
+    assert "Bob" in result2.hallucinations
+    assert len(result2.out_of_scope) == 0
+    
+    # Confidence should reflect only in-scope facts, not out-of-scope.
+    # Use two separate verify() calls since multi-sentence extraction
+    # may not catch both slots in a combined string.
+    result_grounded = verifier.verify(
+        "Your name is Alex.",
+        memories,
+        mode="strict",
+    )
+    assert result_grounded.passed is True
+    assert "name" in result_grounded.facts_supported
+    assert result_grounded.confidence > 0.5
+    assert len(result_grounded.out_of_scope) == 0
+    
+    result_oos = verifier.verify(
+        "Gravity is a fundamental force that attracts objects with mass toward each other.",
+        memories,
+        mode="strict",
+    )
+    assert result_oos.passed is True
+    assert len(result_oos.facts_supported) == 0
+    assert len(result_oos.out_of_scope) > 0
+    # Confidence with only out-of-scope facts = 1.0 (no in-scope facts to fail)
+    assert result_oos.confidence == 1.0
 
 
 def test_confidence_scoring():

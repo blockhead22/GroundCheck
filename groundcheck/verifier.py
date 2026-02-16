@@ -585,8 +585,10 @@ class GroundCheck:
         
         # Build grounding map and collect hallucinations
         hallucinations = []
+        out_of_scope = []
         grounding_map = {}
         supported_facts = {}
+        out_of_scope_facts = {}
         contradicted_claims = []
         
         # Parse supported facts from memories
@@ -629,6 +631,20 @@ class GroundCheck:
                             support_slot = canonical_slot
                             supported_values = memory_facts_by_slot.get(support_slot, set())
                             break
+
+            # ── Out-of-scope check ──────────────────────────────────
+            # If no memory covers this slot (even after alias resolution),
+            # the claim is about something outside the memory store's
+            # domain.  "No matching memory" ≠ "contradicts memory".
+            # Track separately as out-of-scope: not supported, not
+            # hallucinated — simply unverifiable.
+            if not supported_values and support_slot not in memory_facts_by_slot:
+                out_of_scope_facts[slot] = fact
+                for val in split_compound_values(str(fact.value)):
+                    val_stripped = val.strip()
+                    if val_stripped:
+                        out_of_scope.append(val_stripped)
+                continue
             
             # Split compound values from the generated text
             fact_values = split_compound_values(str(fact.value))
@@ -691,10 +707,11 @@ class GroundCheck:
             if all_supported and fact_values:
                 supported_facts[slot] = fact
         
-        # Identify fully unsupported facts (for correction generation)
+        # Identify fully unsupported facts (for correction generation).
+        # Out-of-scope facts are excluded — they're unverifiable, not wrong.
         unsupported_facts = {
             slot: fact for slot, fact in facts_extracted.items()
-            if slot not in supported_facts
+            if slot not in supported_facts and slot not in out_of_scope_facts
         }
         
         # Step 3: Check if contradicted claims are properly disclosed
@@ -752,9 +769,15 @@ class GroundCheck:
             not requires_disclosure  # No undisclosed contradictions
         )
         
-        # Calculate confidence based on trust scores of supporting memories
+        # Calculate confidence based on trust scores of supporting memories.
+        # Out-of-scope facts are excluded from the denominator — the verifier
+        # has no opinion on them and they shouldn't drag down confidence.
+        in_scope_facts = {
+            slot: fact for slot, fact in facts_extracted.items()
+            if slot not in out_of_scope_facts
+        }
         confidence = self._calculate_confidence(
-            facts_extracted,
+            in_scope_facts,
             supported_facts,
             grounding_map,
             retrieved_memories
@@ -777,10 +800,12 @@ class GroundCheck:
             corrected=corrected_text,
             passed=passed,
             hallucinations=hallucinations,
+            out_of_scope=out_of_scope,
             grounding_map=grounding_map,
             confidence=confidence,
             facts_extracted=facts_extracted,
             facts_supported=supported_facts,
+            facts_out_of_scope=out_of_scope_facts,
             contradicted_claims=contradicted_claims,
             contradiction_details=contradictions,
             requires_disclosure=requires_disclosure,

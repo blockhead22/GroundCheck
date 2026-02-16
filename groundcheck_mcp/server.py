@@ -66,6 +66,7 @@ def _report_to_dict(report: VerificationReport) -> dict:
         "passed": report.passed,
         "corrected": report.corrected,
         "hallucinations": report.hallucinations,
+        "out_of_scope": report.out_of_scope,
         "confidence": report.confidence,
         "facts_extracted": {
             k: {"slot": v.slot, "value": v.value, "normalized": v.normalized}
@@ -74,6 +75,10 @@ def _report_to_dict(report: VerificationReport) -> dict:
         "facts_supported": {
             k: {"slot": v.slot, "value": v.value, "normalized": v.normalized}
             for k, v in report.facts_supported.items()
+        },
+        "facts_out_of_scope": {
+            k: {"slot": v.slot, "value": v.value, "normalized": v.normalized}
+            for k, v in report.facts_out_of_scope.items()
         },
         "contradicted_claims": report.contradicted_claims,
         "contradiction_details": [
