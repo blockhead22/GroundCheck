@@ -15,7 +15,10 @@ from typing import List
 from . import __version__
 from .types import Memory
 from .verifier import GroundCheck
-from .fact_extractor import extract_fact_slots
+try:
+    from .llm_fact_extractor import extract_fact_slots
+except ImportError:
+    from .fact_extractor import extract_fact_slots
 
 
 def _load_memories(path: str) -> List[Memory]:

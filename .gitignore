@@ -38,3 +38,6 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Local dev config (API keys, model paths)
+.groundcheck_config.json

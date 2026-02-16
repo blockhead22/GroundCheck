@@ -17,7 +17,13 @@ from typing import Optional
 from mcp.server import FastMCP
 
 from groundcheck import GroundCheck, VerificationReport
-from groundcheck.fact_extractor import extract_fact_slots
+
+# Use LLM-based extractor by default, fall back to regex
+try:
+    from groundcheck.llm_fact_extractor import extract_fact_slots
+except ImportError:
+    from groundcheck.fact_extractor import extract_fact_slots
+
 from .storage import MemoryStore
 
 logger = logging.getLogger("groundcheck-mcp")
