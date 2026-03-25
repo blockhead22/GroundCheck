@@ -1,6 +1,6 @@
 # GroundCheck
 
-**Trust-weighted hallucination detection for AI agents. Zero dependencies. Sub-2ms.**
+**Trust-weighted hallucination detection with contradiction tracking for AI agents. Zero dependencies. Sub-2ms.**
 
 [![PyPI version](https://badge.fury.io/py/groundcheck.svg)](https://pypi.org/project/groundcheck/)
 [![CI](https://github.com/blockhead22/GroundCheck/actions/workflows/groundcheck-test.yml/badge.svg)](https://github.com/blockhead22/GroundCheck/actions/workflows/groundcheck-test.yml)
@@ -12,12 +12,14 @@
 
 ## The Problem
 
-Your AI agent says "you work at Amazon." Memory says "Microsoft." Most systems won't catch this — they just return the most similar embedding and hope for the best. GroundCheck catches it in <2ms with zero dependencies.
+Your AI agent says "you work at Amazon." Memory says "Microsoft." Most systems either silently overwrite or don't catch it at all. GroundCheck catches it in <2ms, tracks the contradiction in an append-only ledger, evolves trust scores, and decides whether to tell you — all with zero required dependencies.
 
 ## Install
 
 ```bash
-pip install groundcheck
+pip install groundcheck              # Core — zero deps, sub-2ms
+pip install groundcheck[ml]          # + XGBoost/sklearn contradiction detection
+pip install groundcheck[neural]      # + Embedding-based paraphrase matching
 ```
 
 ## 10-Second Demo
@@ -38,6 +40,49 @@ print(result.passed)          # False
 print(result.hallucinations)  # ["Amazon"]
 print(result.corrected)       # "You work at Microsoft and live in Seattle"
 print(result.confidence)      # 0.65
+```
+
+## Trust-Aware Demo (v2)
+
+```python
+from groundcheck import CRTMath, CRTConfig, ContradictionLedger, ContradictionLifecycle
+from groundcheck import ContradictionLifecycleEntry, DisclosurePolicy
+
+math = CRTMath(CRTConfig())
+
+# Trust evolves based on evidence
+trust = 0.85
+trust = math.evolve_trust_contradicted(trust, drift=0.7)   # → ~0.64 (penalized)
+trust = math.evolve_trust_reinforced(trust, drift=0.1)     # → ~0.68 (boosted)
+
+# Contradictions are tracked, not deleted
+ledger = ContradictionLedger()  # SQLite-backed, append-only
+entry = ledger.record_contradiction(
+    old_memory_id="m1", new_memory_id="m2",
+    drift_mean=0.75, confidence_delta=0.2,
+    old_text="works at Microsoft", new_text="works at Amazon",
+)
+
+# Lifecycle engine decides when to tell the user
+lifecycle = ContradictionLifecycle()
+lc = ContradictionLifecycleEntry(ledger_id=entry.ledger_id, affected_slots={"employer"})
+lifecycle.record_confirmation(lc)  # User said "Amazon" again
+lifecycle.record_confirmation(lc)  # State: ACTIVE → SETTLING
+
+policy = DisclosurePolicy()
+policy.should_disclose(lc)  # False — user has confirmed, settling down
+```
+
+## Architecture
+
+```
+Input → Fact Extraction (3 tiers: regex + knowledge + neural)
+  → Contradiction Detection (6 rules + ML classifier)
+  → Trust Math (evolution equations: aligned/reinforced/contradicted)
+  → Contradiction Ledger (append-only SQLite, no silent overwrites)
+  → Lifecycle Engine (ACTIVE → SETTLING → SETTLED → ARCHIVED)
+  → Disclosure Policy (transparency levels + high-stakes detection)
+  → VerificationReport
 ```
 
 ## CLI
@@ -69,9 +114,12 @@ Memory files are JSON — either a list of objects or `{"memories": [...]}`:
 | Sources | Single string or premise/hypothesis pair | Multiple memories with per-source trust scores |
 | Trust | All sources treated equally | Trust-weighted — high-trust memories override low-trust |
 | Contradictions | Not detected | Cross-memory conflict detection with resolution |
+| Contradiction History | Silent overwrite | **Append-only ledger** — nothing deleted |
+| Trust Evolution | Static | **Dynamic** — aligned/reinforced/contradicted equations |
+| Lifecycle | None | **State machine** — ACTIVE → SETTLING → SETTLED → ARCHIVED |
 | Correction | Flag only — no fix | Auto-rewrites hallucinations with grounded facts |
 | Temporal | No awareness | `most_recent` vs `most_trusted` resolution |
-| Dependencies | Often torch, transformers, etc. | **Zero** (stdlib only, neural optional) |
+| Dependencies | Often torch, transformers, etc. | **Zero** (stdlib only, neural/ml optional) |
 | Latency | 500ms – 3,000ms+ | **Sub-2ms** (regex mode) |
 | Extra LLM calls | Some require 3-5 per check | **Zero** |
 
@@ -203,6 +251,45 @@ Returns `List[KnowledgeFact]` with inferred relationships.
 - `values: List[str]` — conflicting values
 - `most_trusted_value` — value from highest-trust memory
 - `most_recent_value` — value from most recent memory
+
+### `CRTMath` (v2)
+Trust evolution engine with drift-aware equations.
+- `CRTMath(config=CRTConfig())` — constructor
+- `similarity(a, b)` → cosine similarity between vectors
+- `drift_meaning(old_vec, new_vec)` → semantic drift (1 - similarity)
+- `evolve_trust_aligned(trust, drift)` → trust increase on alignment
+- `evolve_trust_reinforced(trust, drift)` → trust boost on validation
+- `evolve_trust_contradicted(trust, drift)` → trust penalty on contradiction
+- `detect_contradiction(old_text, new_text, ...)` → 6-rule detection result
+- `compute_volatility(entries)` → volatility metric
+- `should_reflect(volatility)` → reflection trigger
+
+### `ContradictionLedger` (v2)
+Append-only SQLite ledger — no silent overwrites.
+- `record_contradiction(old_id, new_id, drift, ...)` → `ContradictionEntry`
+- `resolve_contradiction(ledger_id, method)` → mark resolved
+- `get_open_contradictions()` → list open contradictions
+- `get_contradiction_stats(days=7)` → summary dict
+
+### `ContradictionLifecycle` (v2)
+State machine: ACTIVE → SETTLING → SETTLED → ARCHIVED.
+- `update_state(entry)` → evaluate and return new state
+- `record_confirmation(entry)` → count user confirmation, advance state
+
+### `DisclosurePolicy` (v2)
+- `should_disclose(contradiction, query_context)` → bool
+- `get_disclosure_priority(contradictions)` → sorted list
+
+### `MLContradictionDetector` (v2, optional)
+XGBoost-based detection with 18 features. `pip install groundcheck[ml]`.
+- `check_contradiction(old_value, new_value, slot)` → detection result dict
+
+### `run_trust_decay_pass()` / `reinforce_memory()` (v2)
+Exponential trust decay with drift-aware reinforcement.
+
+## OpenClaw Integration
+
+GroundCheck can plug into Open WebUI as a pipe/filter function. See [`examples/openclaw_plugin.py`](examples/openclaw_plugin.py) for a skeleton.
 
 ## MCP Server (Agent Integration)
 

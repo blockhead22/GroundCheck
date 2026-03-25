@@ -14,7 +14,7 @@ Example:
     >>> print(result.hallucinations)  # ["Amazon"]
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 from .types import Memory, VerificationReport, ExtractedFact, ContradictionDetail
 from .verifier import GroundCheck
@@ -27,6 +27,34 @@ from .knowledge_extractor import (
     find_entities,
     find_verbs,
 )
+
+# Trust math (core CRT engine)
+from .trust_math import CRTConfig, CRTMath, SSEMode, MemorySource
+
+# Contradiction ledger
+from .ledger import (
+    ContradictionLedger,
+    ContradictionEntry,
+    ContradictionStatus,
+    ContradictionType,
+)
+
+# Lifecycle engine
+from .lifecycle import (
+    ContradictionLifecycle,
+    ContradictionLifecycleState,
+    ContradictionLifecycleEntry,
+    DisclosurePolicy,
+    TransparencyLevel,
+    MemoryStyle,
+    UserTransparencyPrefs,
+)
+
+# Trust decay
+from .decay import run_trust_decay_pass, reinforce_memory
+
+# Trace logging
+from .trace_logger import ContradictionTraceLogger, get_trace_logger
 
 # Neural extraction and semantic matching (optional)
 try:
@@ -42,7 +70,16 @@ except ImportError:
     SemanticContradictionDetector = None
     ContradictionResult = None
 
+# ML detection (optional — requires sklearn)
+try:
+    from .ml_detector import MLContradictionDetector
+    _ML_DETECTOR_AVAILABLE = True
+except ImportError:
+    _ML_DETECTOR_AVAILABLE = False
+    MLContradictionDetector = None  # type: ignore
+
 __all__ = [
+    # Core verification (v1)
     "GroundCheck",
     "Memory",
     "VerificationReport",
@@ -55,9 +92,36 @@ __all__ = [
     "infer_facts",
     "find_entities",
     "find_verbs",
+    # Neural (optional)
     "HybridFactExtractor",
     "NeuralExtractionResult",
     "SemanticMatcher",
     "SemanticContradictionDetector",
     "ContradictionResult",
+    # Trust math (v2)
+    "CRTConfig",
+    "CRTMath",
+    "SSEMode",
+    "MemorySource",
+    # Contradiction ledger (v2)
+    "ContradictionLedger",
+    "ContradictionEntry",
+    "ContradictionStatus",
+    "ContradictionType",
+    # Lifecycle engine (v2)
+    "ContradictionLifecycle",
+    "ContradictionLifecycleState",
+    "ContradictionLifecycleEntry",
+    "DisclosurePolicy",
+    "TransparencyLevel",
+    "MemoryStyle",
+    "UserTransparencyPrefs",
+    # Trust decay (v2)
+    "run_trust_decay_pass",
+    "reinforce_memory",
+    # Trace logging (v2)
+    "ContradictionTraceLogger",
+    "get_trace_logger",
+    # ML detection (v2, optional)
+    "MLContradictionDetector",
 ]

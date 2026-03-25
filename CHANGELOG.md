@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.0.0] - 2026-03-24
+
+### Added
+- **Trust Math Engine** (`trust_math.py`) — CRTConfig, CRTMath with trust evolution
+  equations (aligned/reinforced/contradicted), semantic drift measurement,
+  6-rule contradiction detection, retrieval scoring, volatility computation.
+- **Contradiction Ledger** (`ledger.py`) — Append-only SQLite ledger tracking every
+  contradiction. No silent overwrites. Stores drift measurements, resolution status,
+  and full audit trail.
+- **Lifecycle Engine** (`lifecycle.py`) — State machine for contradiction lifecycle:
+  ACTIVE → SETTLING → SETTLED → ARCHIVED. Confirmation counting, disclosure policy
+  with transparency levels (MINIMAL/BALANCED/AUDIT_HEAVY), high-stakes detection.
+- **ML Contradiction Detector** (`ml_detector.py`) — XGBoost-based detection with
+  18 features. Includes retraction pattern matching, semantic equivalence database,
+  detail enrichment detection, transient state filtering. Falls back to heuristics
+  when sklearn unavailable.
+- **Trust Decay** (`decay.py`) — Exponential trust decay with 7-day grace period,
+  drift-aware reinforcement on memory access, configurable floor/ceiling.
+- **Trace Logger** (`trace_logger.py`) — Structured event logging for contradiction
+  resolution debugging.
+- **Integration example** (`examples/trust_aware_agent.py`) — Full CRT pipeline demo.
+- **OpenClaw plugin skeleton** (`examples/openclaw_plugin.py`).
+- Optional dependency group: `groundcheck[ml]` for XGBoost/sklearn.
+
+### Changed
+- Version bump to 2.0.0 (major capability expansion with trust math, ledger, lifecycle).
+- README rewritten to cover trust math, ledger, and lifecycle features.
+
 ## [1.0.0] - 2026-02-12
 
 ### Added

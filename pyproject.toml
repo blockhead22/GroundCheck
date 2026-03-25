@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "groundcheck"
-version = "1.0.0"
+version = "2.0.0"
 description = "Trust-weighted hallucination detection for AI agents. Verify LLM outputs against multiple sources with contradiction awareness. Zero dependencies. Sub-2ms."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -49,6 +49,10 @@ Changelog = "https://github.com/blockhead22/GroundCheck/blob/main/CHANGELOG.md"
 neural = [
     "sentence-transformers>=2.2.0",
     "transformers>=4.20.0",
+]
+ml = [
+    "scikit-learn>=1.0.0",
+    "xgboost>=1.5.0",
 ]
 mcp = [
     "mcp>=1.0.0; python_version>='3.10'",
