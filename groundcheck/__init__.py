@@ -29,7 +29,10 @@ from .knowledge_extractor import (
 )
 
 # Trust math (core CRT engine)
-from .trust_math import CRTConfig, CRTMath, SSEMode, MemorySource
+from .trust_math import CRTConfig, CRTMath, SSEMode, MemorySource, DetectionResult, RuleScore
+
+# Storage backends
+from .backends import InMemoryBackend, SQLiteBackend, LedgerBackend
 
 # Contradiction ledger
 from .ledger import (
@@ -48,6 +51,7 @@ from .lifecycle import (
     TransparencyLevel,
     MemoryStyle,
     UserTransparencyPrefs,
+    LifecycleHook,
 )
 
 # Trust decay
@@ -103,6 +107,13 @@ __all__ = [
     "CRTMath",
     "SSEMode",
     "MemorySource",
+    # Storage backends (v2.1)
+    "InMemoryBackend",
+    "SQLiteBackend",
+    "LedgerBackend",
+    # Scored detection (v2.1)
+    "DetectionResult",
+    "RuleScore",
     # Contradiction ledger (v2)
     "ContradictionLedger",
     "ContradictionEntry",
@@ -116,6 +127,7 @@ __all__ = [
     "TransparencyLevel",
     "MemoryStyle",
     "UserTransparencyPrefs",
+    "LifecycleHook",
     # Trust decay (v2)
     "run_trust_decay_pass",
     "reinforce_memory",

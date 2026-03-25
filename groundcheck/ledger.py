@@ -1,17 +1,24 @@
 """
 CRT Contradiction Ledger — No Silent Overwrites.
 
-Append-only SQLite ledger tracking every contradiction detected by the system.
+Append-only ledger tracking every contradiction detected by the system.
 Nothing is deleted or silently replaced. Tension is preserved until reflection.
 
-Philosophy:
-- Contradictions are signals, not bugs
-- Nothing is deleted or silently replaced
-- Tension is preserved until reflection
-- History matters more than consistency
+Supports pluggable storage backends via the ``LedgerBackend`` protocol.
+Default: SQLite. For testing: ``InMemoryBackend``.
+
+Usage::
+
+    from groundcheck.ledger import ContradictionLedger
+    from groundcheck.backends import InMemoryBackend
+
+    # Production (SQLite, default)
+    ledger = ContradictionLedger()
+
+    # Testing (in-memory, zero cleanup)
+    ledger = ContradictionLedger(backend=InMemoryBackend())
 """
 
-import sqlite3
 import json
 import logging
 import time
@@ -131,15 +138,12 @@ class ContradictionLedger:
     5. Trigger reflection if needed
 
     Args:
-        db_path: SQLite database path. Defaults to ``~/.groundcheck/ledger.db``
-            or ``GROUNDCHECK_DB`` env var.
+        db_path: SQLite database path. Ignored when ``backend`` is provided.
         config: CRT configuration for math operations.
-        fact_extractor: Optional callable ``(text) -> dict`` for extracting
-            fact slots from text. If not provided, uses groundcheck's built-in
-            ``extract_fact_slots``.
-        drift_assessor: Optional callable ``(old_text, new_text) -> str``
-            returning a contradiction type string. Replaces the monolith's
-            LLM drift assessor.
+        fact_extractor: Optional callable ``(text) -> dict``.
+        drift_assessor: Optional callable ``(old_text, new_text) -> str``.
+        backend: Storage backend (``LedgerBackend`` protocol). Defaults to
+            ``SQLiteBackend(db_path)``. Pass ``InMemoryBackend()`` for tests.
     """
 
     def __init__(
@@ -148,18 +152,33 @@ class ContradictionLedger:
         config: Optional[CRTConfig] = None,
         fact_extractor=None,
         drift_assessor=None,
+        backend=None,
     ):
-        self.db_path = db_path or _default_db_path()
         self.config = config or CRTConfig()
         self.crt_math = CRTMath(self.config)
         self.default_thread_id: Optional[str] = None
 
         # Pluggable fact extraction
         self._fact_extractor = fact_extractor
-        # Pluggable drift assessor (replaces LLM drift assessor)
+        # Pluggable drift assessor
         self._drift_assessor = drift_assessor
 
-        self._init_db()
+        # Storage backend
+        if backend is not None:
+            self._backend = backend
+        else:
+            from .backends import SQLiteBackend
+            self._backend = SQLiteBackend(db_path=db_path or _default_db_path())
+
+        # Backward compat: expose db_path if using SQLite
+        self.db_path = getattr(self._backend, "db_path", None)
+
+        self._backend.init_storage()
+
+    @property
+    def backend(self):
+        """The active storage backend."""
+        return self._backend
 
     def _extract_all_facts(self, text: str) -> Dict[str, Any]:
         """Extract facts from text using configured extractor."""
@@ -168,131 +187,11 @@ class ContradictionLedger:
                 return self._fact_extractor(text) or {}
             except Exception:
                 pass
-
-        # Fall back to groundcheck's built-in extractor
         try:
             from .fact_extractor import extract_fact_slots
             return extract_fact_slots(text) or {}
         except ImportError:
             return {}
-
-    def _get_connection(self, timeout: float = 30.0) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=timeout, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
-
-    def _has_contradiction_thread_column(self) -> bool:
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("PRAGMA table_info(contradictions)")
-            return any(str(row[1] or "") == "thread_id" for row in cursor.fetchall())
-        finally:
-            conn.close()
-
-    def _init_db(self):
-        # Ensure parent directory exists
-        from pathlib import Path
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS contradictions (
-                ledger_id TEXT PRIMARY KEY,
-                timestamp REAL NOT NULL,
-                old_memory_id TEXT NOT NULL,
-                new_memory_id TEXT NOT NULL,
-                drift_mean REAL NOT NULL,
-                drift_reason REAL,
-                confidence_delta REAL,
-                status TEXT NOT NULL,
-                contradiction_type TEXT DEFAULT 'conflict',
-                affects_slots TEXT,
-                query TEXT,
-                summary TEXT,
-                resolution_timestamp REAL,
-                resolution_method TEXT,
-                merged_memory_id TEXT,
-                metadata TEXT,
-                thread_id TEXT
-            )
-        """)
-
-        # Migration columns
-        for col, coltype in [
-            ("metadata", "TEXT"),
-            ("thread_id", "TEXT"),
-            ("lifecycle_state", "TEXT DEFAULT 'active'"),
-            ("confirmation_count", "INTEGER DEFAULT 0"),
-            ("disclosure_count", "INTEGER DEFAULT 0"),
-            ("settled_at", "REAL"),
-            ("archived_at", "REAL"),
-        ]:
-            try:
-                cursor.execute(f"ALTER TABLE contradictions ADD COLUMN {col} {coltype}")
-            except sqlite3.OperationalError:
-                pass
-
-        # Indexes
-        for idx_sql in [
-            "CREATE INDEX IF NOT EXISTS idx_contradictions_status ON contradictions(status)",
-            "CREATE INDEX IF NOT EXISTS idx_contradictions_old_memory ON contradictions(old_memory_id)",
-            "CREATE INDEX IF NOT EXISTS idx_contradictions_new_memory ON contradictions(new_memory_id)",
-            "CREATE INDEX IF NOT EXISTS idx_contradictions_thread_status ON contradictions(thread_id, status, timestamp)",
-        ]:
-            try:
-                cursor.execute(idx_sql)
-            except Exception:
-                pass
-
-        # Reflection queue
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS reflection_queue (
-                queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp REAL NOT NULL,
-                ledger_id TEXT NOT NULL,
-                volatility REAL NOT NULL,
-                priority TEXT NOT NULL,
-                context_json TEXT,
-                processed INTEGER DEFAULT 0,
-                FOREIGN KEY (ledger_id) REFERENCES contradictions(ledger_id)
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_reflection_queue_processed
-            ON reflection_queue(processed, priority)
-        """)
-
-        # Worklog
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS contradiction_worklog (
-                ledger_id TEXT PRIMARY KEY,
-                first_asked_at REAL,
-                last_asked_at REAL,
-                ask_count INTEGER DEFAULT 0,
-                last_user_answer TEXT,
-                last_user_answer_at REAL
-            )
-        """)
-
-        # Conflict resolutions
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS conflict_resolutions (
-                ledger_id TEXT PRIMARY KEY,
-                resolution_method TEXT NOT NULL,
-                chosen_memory_id TEXT,
-                user_feedback TEXT,
-                timestamp REAL NOT NULL,
-                FOREIGN KEY (ledger_id) REFERENCES contradictions(ledger_id)
-            )
-        """)
-
-        conn.commit()
-        conn.close()
 
     # ========================================================================
     # Recording
@@ -302,8 +201,6 @@ class ContradictionLedger:
         self, old_text: str, new_text: str, drift_mean: float,
         old_vector=None, new_vector=None,
     ) -> str:
-        """Classify contradiction type."""
-        # Try pluggable drift assessor first
         if self._drift_assessor is not None:
             try:
                 result = self._drift_assessor(old_text, new_text)
@@ -312,7 +209,6 @@ class ContradictionLedger:
             except Exception:
                 pass
 
-        # Use CRTMath's classify_fact_change
         old_facts = self._extract_all_facts(old_text) or {}
         new_facts = self._extract_all_facts(new_text) or {}
         shared_slots = set(old_facts.keys()) & set(new_facts.keys())
@@ -323,7 +219,6 @@ class ContradictionLedger:
             new_val = str(getattr(new_facts.get(slot), "value", new_facts.get(slot, "")))
             return self.crt_math.classify_fact_change(slot, new_val, old_val, new_text, old_text)
 
-        # Heuristic classification
         old_lower = old_text.lower()
         new_lower = new_text.lower()
 
@@ -400,7 +295,6 @@ class ContradictionLedger:
             else:
                 contradiction_type = ContradictionType.CONFLICT
 
-        # Extract affected slots
         affects_slots_set: set = set()
         if old_text and new_text:
             old_facts = self._extract_all_facts(old_text) or {}
@@ -425,92 +319,77 @@ class ContradictionLedger:
             thread_id=thread_id or self.default_thread_id,
         )
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         metadata = {}
         if suggested_policy:
             metadata["suggested_policy"] = suggested_policy
 
-        cursor.execute("""
-            INSERT INTO contradictions
-            (ledger_id, timestamp, old_memory_id, new_memory_id, drift_mean,
-             drift_reason, confidence_delta, status, contradiction_type,
-             affects_slots, query, summary, metadata, thread_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            entry.ledger_id, entry.timestamp,
-            old_memory_id, new_memory_id,
-            drift_mean, drift_reason, confidence_delta,
-            entry.status, entry.contradiction_type,
-            entry.affects_slots, query, entry.summary,
-            json.dumps(metadata) if metadata else None,
-            entry.thread_id,
-        ))
+        self._backend.insert_contradiction({
+            "ledger_id": entry.ledger_id,
+            "timestamp": entry.timestamp,
+            "old_memory_id": old_memory_id,
+            "new_memory_id": new_memory_id,
+            "drift_mean": drift_mean,
+            "drift_reason": drift_reason,
+            "confidence_delta": confidence_delta,
+            "status": entry.status,
+            "contradiction_type": entry.contradiction_type,
+            "affects_slots": entry.affects_slots,
+            "query": query,
+            "summary": entry.summary,
+            "metadata": metadata if metadata else None,
+            "thread_id": entry.thread_id,
+        })
 
-        conn.commit()
-        conn.close()
         return entry
 
     # ========================================================================
     # Queries
     # ========================================================================
 
+    def _dict_to_entry(self, d: Dict[str, Any]) -> ContradictionEntry:
+        return ContradictionEntry(
+            ledger_id=d.get("ledger_id", ""),
+            timestamp=d.get("timestamp", 0.0),
+            old_memory_id=d.get("old_memory_id", ""),
+            new_memory_id=d.get("new_memory_id", ""),
+            drift_mean=d.get("drift_mean", 0.0),
+            drift_reason=d.get("drift_reason"),
+            confidence_delta=d.get("confidence_delta", 0.0),
+            status=d.get("status", ContradictionStatus.OPEN),
+            contradiction_type=d.get("contradiction_type", ContradictionType.CONFLICT),
+            affects_slots=d.get("affects_slots"),
+            query=d.get("query"),
+            summary=d.get("summary"),
+            resolution_timestamp=d.get("resolution_timestamp"),
+            resolution_method=d.get("resolution_method"),
+            merged_memory_id=d.get("merged_memory_id"),
+            thread_id=d.get("thread_id"),
+        )
+
     def get_open_contradictions(
         self, limit: int = 10, thread_id: Optional[str] = None,
     ) -> List[ContradictionEntry]:
-        conn = self._get_connection()
-        cursor = conn.cursor()
         effective_thread = thread_id if thread_id is not None else self.default_thread_id
-        if effective_thread is not None and self._has_contradiction_thread_column():
-            cursor.execute("""
-                SELECT * FROM contradictions
-                WHERE status = ?
-                  AND COALESCE(thread_id, 'default') = ?
-                ORDER BY timestamp DESC LIMIT ?
-            """, (ContradictionStatus.OPEN, str(effective_thread), limit))
-        else:
-            cursor.execute("""
-                SELECT * FROM contradictions
-                WHERE status = ?
-                ORDER BY timestamp DESC LIMIT ?
-            """, (ContradictionStatus.OPEN, limit))
-        rows = cursor.fetchall()
-        conn.close()
-        return [self._row_to_entry(row) for row in rows]
+        rows = self._backend.get_contradictions(
+            status=ContradictionStatus.OPEN,
+            thread_id=effective_thread,
+            limit=limit,
+        )
+        return [self._dict_to_entry(d) for d in rows]
 
     def get_all_contradictions(
         self, limit: int = 100, thread_id: Optional[str] = None,
     ) -> List[ContradictionEntry]:
-        conn = self._get_connection()
-        cursor = conn.cursor()
         effective_thread = thread_id if thread_id is not None else self.default_thread_id
-        if effective_thread is not None and self._has_contradiction_thread_column():
-            cursor.execute("""
-                SELECT * FROM contradictions
-                WHERE COALESCE(thread_id, 'default') = ?
-                ORDER BY timestamp DESC LIMIT ?
-            """, (str(effective_thread), int(limit)))
-        else:
-            cursor.execute("""
-                SELECT * FROM contradictions
-                ORDER BY timestamp DESC LIMIT ?
-            """, (int(limit),))
-        rows = cursor.fetchall()
-        conn.close()
-        return [self._row_to_entry(row) for row in rows]
+        rows = self._backend.get_contradictions(
+            thread_id=effective_thread,
+            limit=limit,
+        )
+        return [self._dict_to_entry(d) for d in rows]
 
     def get_contradiction_by_memory(self, memory_id: str) -> List[ContradictionEntry]:
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM contradictions
-            WHERE old_memory_id = ? OR new_memory_id = ?
-            ORDER BY timestamp DESC
-        """, (memory_id, memory_id))
-        rows = cursor.fetchall()
-        conn.close()
-        return [self._row_to_entry(row) for row in rows]
+        rows = self._backend.get_contradictions(memory_id=memory_id)
+        return [self._dict_to_entry(d) for d in rows]
 
     def has_open_contradiction(self, memory_id: str) -> bool:
         contradictions = self.get_contradiction_by_memory(memory_id)
@@ -527,49 +406,22 @@ class ContradictionLedger:
         merged_memory_id: Optional[str] = None,
         new_status: str = ContradictionStatus.RESOLVED,
     ):
-        """Mark contradiction as resolved."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE contradictions
-            SET status = ?, resolution_timestamp = ?,
-                resolution_method = ?, merged_memory_id = ?
-            WHERE ledger_id = ?
-        """, (new_status, time.time(), method, merged_memory_id, ledger_id))
-        conn.commit()
-        conn.close()
+        self._backend.update_contradiction(ledger_id, {
+            "status": new_status,
+            "resolution_timestamp": time.time(),
+            "resolution_method": method,
+            "merged_memory_id": merged_memory_id,
+        })
 
     # ========================================================================
-    # Worklog (ask/answer tracking)
+    # Worklog
     # ========================================================================
 
     def mark_contradiction_asked(self, ledger_id: str) -> None:
-        ts = time.time()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO contradiction_worklog (ledger_id, first_asked_at, last_asked_at, ask_count)
-            VALUES (?, ?, ?, 1)
-            ON CONFLICT(ledger_id) DO UPDATE SET
-                last_asked_at=excluded.last_asked_at,
-                ask_count=coalesce(contradiction_worklog.ask_count, 0) + 1
-        """, (ledger_id, ts, ts))
-        conn.commit()
-        conn.close()
+        self._backend.upsert_worklog_asked(ledger_id, time.time())
 
     def record_contradiction_user_answer(self, ledger_id: str, answer: str) -> None:
-        ts = time.time()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO contradiction_worklog (ledger_id, last_user_answer, last_user_answer_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(ledger_id) DO UPDATE SET
-                last_user_answer=excluded.last_user_answer,
-                last_user_answer_at=excluded.last_user_answer_at
-        """, (ledger_id, (answer or "").strip(), ts))
-        conn.commit()
-        conn.close()
+        self._backend.upsert_worklog_answer(ledger_id, answer, time.time())
 
     # ========================================================================
     # Reflection Queue
@@ -578,7 +430,6 @@ class ContradictionLedger:
     def queue_reflection(
         self, ledger_id: str, volatility: float, context: Optional[Dict] = None,
     ):
-        """Queue contradiction for reflection."""
         if volatility >= 0.7:
             priority = "high"
         elif volatility >= 0.4:
@@ -586,61 +437,19 @@ class ContradictionLedger:
         else:
             priority = "low"
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO reflection_queue
-            (timestamp, ledger_id, volatility, priority, context_json)
-            VALUES (?, ?, ?, ?, ?)
-        """, (time.time(), ledger_id, volatility, priority,
-              json.dumps(context) if context else None))
-        conn.commit()
-        conn.close()
+        self._backend.insert_reflection({
+            "timestamp": time.time(),
+            "ledger_id": ledger_id,
+            "volatility": volatility,
+            "priority": priority,
+            "context": context,
+        })
 
     def get_reflection_queue(self, priority: Optional[str] = None) -> List[Dict]:
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        if priority:
-            cursor.execute("""
-                SELECT * FROM reflection_queue
-                WHERE processed = 0 AND priority = ?
-                ORDER BY volatility DESC, timestamp ASC
-            """, (priority,))
-        else:
-            cursor.execute("""
-                SELECT * FROM reflection_queue
-                WHERE processed = 0
-                ORDER BY
-                    CASE priority
-                        WHEN 'high' THEN 1
-                        WHEN 'medium' THEN 2
-                        WHEN 'low' THEN 3
-                    END,
-                    volatility DESC, timestamp ASC
-            """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [
-            {
-                "queue_id": row[0],
-                "timestamp": row[1],
-                "ledger_id": row[2],
-                "volatility": row[3],
-                "priority": row[4],
-                "context": json.loads(row[5]) if row[5] else None,
-            }
-            for row in rows
-        ]
+        return self._backend.get_reflections(processed=False, priority=priority)
 
     def mark_reflection_processed(self, queue_id: int):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE reflection_queue SET processed = 1 WHERE queue_id = ?",
-            (queue_id,),
-        )
-        conn.commit()
-        conn.close()
+        self._backend.mark_reflection_processed(queue_id)
 
     # ========================================================================
     # Statistics
@@ -652,43 +461,25 @@ class ContradictionLedger:
         since = time.time() - (days * 86400)
         effective_thread = thread_id if thread_id is not None else self.default_thread_id
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        has_thread = effective_thread is not None and self._has_contradiction_thread_column()
-        tc = " AND COALESCE(thread_id, 'default') = ?" if has_thread else ""
-        tp = (str(effective_thread),) if has_thread else ()
-
-        cursor.execute(
-            f"SELECT COUNT(*) FROM contradictions WHERE timestamp > ?{tc}",
-            (since,) + tp,
+        total = self._backend.count_contradictions(since=since, thread_id=effective_thread)
+        open_count = self._backend.count_contradictions(
+            since=since, status=ContradictionStatus.OPEN, thread_id=effective_thread,
         )
-        total = cursor.fetchone()[0]
-
-        cursor.execute(f"""
-            SELECT status, COUNT(*)
-            FROM contradictions
-            WHERE timestamp > ?{tc}
-            GROUP BY status
-        """, (since,) + tp)
-        by_status = dict(cursor.fetchall())
-
-        cursor.execute(
-            f"SELECT AVG(drift_mean) FROM contradictions WHERE timestamp > ?{tc}",
-            (since,) + tp,
+        resolved_count = self._backend.count_contradictions(
+            since=since, status=ContradictionStatus.RESOLVED, thread_id=effective_thread,
         )
-        avg_drift = cursor.fetchone()[0] or 0.0
-
-        cursor.execute("SELECT COUNT(*) FROM reflection_queue WHERE processed = 0")
-        pending = cursor.fetchone()[0]
-
-        conn.close()
+        accepted_count = self._backend.count_contradictions(
+            since=since, status=ContradictionStatus.ACCEPTED, thread_id=effective_thread,
+        )
+        avg = self._backend.avg_drift(since=since, thread_id=effective_thread)
+        pending = self._backend.count_pending_reflections()
 
         return {
             "total_contradictions": total,
-            "open": by_status.get(ContradictionStatus.OPEN, 0),
-            "resolved": by_status.get(ContradictionStatus.RESOLVED, 0),
-            "accepted": by_status.get(ContradictionStatus.ACCEPTED, 0),
-            "average_drift": avg_drift,
+            "open": open_count,
+            "resolved": resolved_count,
+            "accepted": accepted_count,
+            "average_drift": avg,
             "pending_reflections": pending,
             "days": days,
         }
@@ -698,81 +489,33 @@ class ContradictionLedger:
     # ========================================================================
 
     def process_lifecycle_transitions(self) -> int:
-        """Process lifecycle state transitions for all active contradictions.
-
-        Returns the number of transitions performed.
-        """
         from .lifecycle import ContradictionLifecycle, ContradictionLifecycleEntry, ContradictionLifecycleState
 
         lifecycle = ContradictionLifecycle()
         transitions = 0
 
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT ledger_id, lifecycle_state, timestamp, confirmation_count, disclosure_count
-            FROM contradictions
-            WHERE status = ? AND lifecycle_state != 'archived'
-        """, (ContradictionStatus.OPEN,))
+        rows = self._backend.get_contradictions(status=ContradictionStatus.OPEN, limit=1000)
 
-        rows = cursor.fetchall()
-        conn.close()
+        for d in rows:
+            current_state = d.get("lifecycle_state") or "active"
+            if current_state == "archived":
+                continue
 
-        for row in rows:
-            lid, current_state, detected_at, conf_count, disc_count = row
             entry = ContradictionLifecycleEntry(
-                ledger_id=lid,
-                state=ContradictionLifecycleState(current_state or "active"),
-                detected_at=detected_at or time.time(),
-                confirmation_count=conf_count or 0,
-                disclosure_count=disc_count or 0,
+                ledger_id=d["ledger_id"],
+                state=ContradictionLifecycleState(current_state),
+                detected_at=d.get("timestamp") or time.time(),
+                confirmation_count=d.get("confirmation_count") or 0,
+                disclosure_count=d.get("disclosure_count") or 0,
             )
             new_state = lifecycle.update_state(entry)
             if new_state != entry.state:
-                self._update_lifecycle_in_db(lid, new_state.value)
+                updates: Dict[str, Any] = {"lifecycle_state": new_state.value}
+                if new_state == ContradictionLifecycleState.SETTLED:
+                    updates["settled_at"] = time.time()
+                elif new_state == ContradictionLifecycleState.ARCHIVED:
+                    updates["archived_at"] = time.time()
+                self._backend.update_contradiction(d["ledger_id"], updates)
                 transitions += 1
 
         return transitions
-
-    def _update_lifecycle_in_db(self, ledger_id: str, new_state: str):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        updates = ["lifecycle_state = ?"]
-        params: list = [new_state]
-        if new_state == "settled":
-            updates.append("settled_at = ?")
-            params.append(time.time())
-        elif new_state == "archived":
-            updates.append("archived_at = ?")
-            params.append(time.time())
-        params.append(ledger_id)
-        cursor.execute(
-            f"UPDATE contradictions SET {', '.join(updates)} WHERE ledger_id = ?",
-            params,
-        )
-        conn.commit()
-        conn.close()
-
-    # ========================================================================
-    # Helpers
-    # ========================================================================
-
-    def _row_to_entry(self, row) -> ContradictionEntry:
-        return ContradictionEntry(
-            ledger_id=row[0],
-            timestamp=row[1],
-            old_memory_id=row[2],
-            new_memory_id=row[3],
-            drift_mean=row[4],
-            drift_reason=row[5],
-            confidence_delta=row[6],
-            status=row[7],
-            contradiction_type=row[8] if len(row) > 8 else ContradictionType.CONFLICT,
-            affects_slots=row[9] if len(row) > 9 else None,
-            query=row[10] if len(row) > 10 else None,
-            summary=row[11] if len(row) > 11 else None,
-            resolution_timestamp=row[12] if len(row) > 12 else None,
-            resolution_method=row[13] if len(row) > 13 else None,
-            merged_memory_id=row[14] if len(row) > 14 else None,
-            thread_id=row[16] if len(row) > 16 else None,
-        )

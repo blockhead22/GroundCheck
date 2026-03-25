@@ -20,7 +20,7 @@ import time
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -108,13 +108,29 @@ class ContradictionLifecycleEntry:
         return self.age_seconds > self.freshness_window
 
 
+# Type alias for lifecycle event callbacks
+LifecycleHook = Callable[
+    ["ContradictionLifecycleEntry", "ContradictionLifecycleState", "ContradictionLifecycleState"],
+    None,
+]
+
+
 class ContradictionLifecycle:
-    """Manages contradiction state transitions.
+    """Manages contradiction state transitions with pluggable event hooks.
 
     Transition rules:
     1. ACTIVE -> SETTLING: 2+ confirmations OR past freshness window
     2. SETTLING -> SETTLED: 5+ confirmations OR past 2x freshness window
     3. SETTLED -> ARCHIVED: After 30 days
+
+    Event hooks:
+        Register callbacks via ``on_state_change(callback)`` or pass a list
+        to the constructor. Callbacks receive ``(entry, old_state, new_state)``.
+
+    Example::
+
+        lc = ContradictionLifecycle()
+        lc.on_state_change(lambda entry, old, new: print(f"{entry.ledger_id}: {old} -> {new}"))
     """
 
     ACTIVE_TO_SETTLING_CONFIRMATIONS = 2
@@ -126,10 +142,35 @@ class ContradictionLifecycle:
         active_to_settling_confirmations: int = 2,
         settling_to_settled_confirmations: int = 5,
         archive_after_days: int = 30,
+        hooks: Optional[List[LifecycleHook]] = None,
     ):
         self.active_to_settling = active_to_settling_confirmations
         self.settling_to_settled = settling_to_settled_confirmations
         self.archive_days = archive_after_days
+        self._hooks: List[LifecycleHook] = list(hooks or [])
+
+    def on_state_change(self, callback: LifecycleHook) -> None:
+        """Register a callback for state transitions.
+
+        Callback signature: ``(entry, old_state, new_state) -> None``.
+        """
+        self._hooks.append(callback)
+
+    def remove_hook(self, callback: LifecycleHook) -> None:
+        """Remove a previously registered hook."""
+        self._hooks = [h for h in self._hooks if h is not callback]
+
+    def _fire_hooks(
+        self,
+        entry: ContradictionLifecycleEntry,
+        old_state: ContradictionLifecycleState,
+        new_state: ContradictionLifecycleState,
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(entry, old_state, new_state)
+            except Exception as e:
+                logger.warning("Lifecycle hook error: %s", e)
 
     def update_state(
         self, entry: ContradictionLifecycleEntry,
@@ -161,14 +202,36 @@ class ContradictionLifecycle:
 
         return current_state
 
+    def transition(
+        self, entry: ContradictionLifecycleEntry,
+    ) -> ContradictionLifecycleState:
+        """Evaluate state and fire hooks if a transition occurs.
+
+        This is the preferred method for external callers — it both
+        updates the entry's state and notifies all registered hooks.
+
+        Returns the (possibly new) state.
+        """
+        old_state = entry.state
+        new_state = self.update_state(entry)
+        if new_state != old_state:
+            entry.state = new_state
+            self._fire_hooks(entry, old_state, new_state)
+        return new_state
+
     def record_confirmation(
         self, entry: ContradictionLifecycleEntry,
     ) -> ContradictionLifecycleState:
         """Record a user confirmation and update state if needed."""
+        old_state = entry.state
         entry.confirmation_count += 1
         entry.last_mentioned = time.time()
         new_state = self.update_state(entry)
-        entry.state = new_state
+        if new_state != old_state:
+            entry.state = new_state
+            self._fire_hooks(entry, old_state, new_state)
+        else:
+            entry.state = new_state
         return new_state
 
     def record_disclosure(

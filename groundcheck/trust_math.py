@@ -18,7 +18,7 @@ Philosophy:
 - Belief evolves slower than speech
 """
 
-from typing import Dict, List, Tuple, Optional, Any, Sequence, Union
+from typing import Callable, Dict, List, Tuple, Optional, Any, Sequence, Union
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
@@ -53,6 +53,47 @@ _MOOD_SLOTS = {
     "mood", "feeling", "emotion", "emotions", "status",
     "user.mood", "user.feeling", "user.emotion",
 }
+
+
+@dataclass
+class RuleScore:
+    """Score from a single detection rule."""
+    rule: str
+    fired: bool
+    confidence: float  # 0.0–1.0
+    reason: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"rule": self.rule, "fired": self.fired, "confidence": self.confidence, "reason": self.reason}
+
+
+@dataclass
+class DetectionResult:
+    """Rich result from contradiction detection with per-rule confidence scores.
+
+    Attributes:
+        is_contradiction: Whether a contradiction was detected (any rule above threshold).
+        reason: Human-readable explanation for the top-firing rule.
+        confidence: Aggregate confidence (max of all fired rule confidences).
+        rule_scores: Per-rule scores for every rule evaluated.
+        fired_rules: Convenience list of rules that fired.
+    """
+    is_contradiction: bool
+    reason: str
+    confidence: float
+    rule_scores: List[RuleScore] = field(default_factory=list)
+
+    @property
+    def fired_rules(self) -> List[RuleScore]:
+        return [r for r in self.rule_scores if r.fired]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "is_contradiction": self.is_contradiction,
+            "reason": self.reason,
+            "confidence": self.confidence,
+            "rule_scores": [r.to_dict() for r in self.rule_scores],
+        }
 
 
 def _is_transient_state_value(value: Optional[str]) -> bool:
@@ -636,6 +677,125 @@ class CRTMath:
             return True, f"Fallback drift: {drift:.3f} > {cfg.theta_fallback}"
 
         return False, "No contradiction"
+
+    def detect_contradiction_scored(
+        self,
+        drift: float,
+        confidence_new: float,
+        confidence_prior: float,
+        source: MemorySource,
+        text_new: str = "",
+        text_prior: str = "",
+        slot: Optional[str] = None,
+        value_new: Optional[str] = None,
+        value_prior: Optional[str] = None,
+        threshold: float = 0.5,
+    ) -> DetectionResult:
+        """Detect contradictions with per-rule confidence scores.
+
+        Same 6-rule system as ``detect_contradiction`` but returns a
+        ``DetectionResult`` with individual confidence scores per rule.
+        Callers can threshold at any level; the default (0.5) matches the
+        boolean behavior of ``detect_contradiction``.
+
+        Args:
+            drift: Semantic drift between old and new.
+            confidence_new: Confidence in the new memory.
+            confidence_prior: Confidence in the prior memory.
+            source: Origin of the new memory.
+            text_new: Full text of the new memory.
+            text_prior: Full text of the prior memory.
+            slot: Fact slot name (e.g. "employer").
+            value_new: Extracted value from new text.
+            value_prior: Extracted value from prior text.
+            threshold: Minimum confidence to treat a rule as "fired". Default 0.5.
+
+        Returns:
+            ``DetectionResult`` with per-rule scores and aggregate confidence.
+        """
+        cfg = self.config
+        scores: List[RuleScore] = []
+
+        # Rule 0a: Entity swap
+        entity_swap, entity_reason = self._detect_entity_swap(
+            slot, value_new, value_prior, text_new, text_prior,
+        )
+        entity_conf = 0.95 if entity_swap else 0.0
+        scores.append(RuleScore(rule="0a_entity_swap", fired=entity_swap, confidence=entity_conf, reason=entity_reason or "no entity swap"))
+
+        # Rule 0b: Negation
+        negation_detected, negation_reason = self._detect_negation_contradiction(text_new, text_prior)
+        negation_conf = 0.90 if negation_detected else 0.0
+        scores.append(RuleScore(rule="0b_negation", fired=negation_detected, confidence=negation_conf, reason=negation_reason or "no negation"))
+
+        # Rule 0c: Preference/boolean inversion
+        inversion_detected, inversion_reason = self._is_boolean_inversion(text_new, text_prior)
+        inversion_conf = 0.85 if inversion_detected else 0.0
+        scores.append(RuleScore(rule="0c_preference_inversion", fired=inversion_detected, confidence=inversion_conf, reason=inversion_reason or "no inversion"))
+
+        # Rule 1: Paraphrase tolerance (suppressor — reduces confidence)
+        is_paraphrase = False
+        if text_new and text_prior and drift > 0.35:
+            is_paraphrase = self._is_likely_paraphrase(text_new, text_prior, drift)
+        scores.append(RuleScore(
+            rule="1_paraphrase_tolerance", fired=is_paraphrase, confidence=0.80 if is_paraphrase else 0.0,
+            reason=f"Paraphrase detected (drift={drift:.3f})" if is_paraphrase else "not a paraphrase",
+        ))
+
+        # Rule 2: High drift
+        if drift > cfg.theta_contra:
+            drift_conf = min(1.0, 0.5 + (drift - cfg.theta_contra) / (1.0 - cfg.theta_contra + 1e-9))
+            drift_reason = f"High drift: {drift:.3f} > {cfg.theta_contra}"
+            scores.append(RuleScore(rule="2_high_drift", fired=True, confidence=drift_conf, reason=drift_reason))
+        else:
+            scores.append(RuleScore(rule="2_high_drift", fired=False, confidence=0.0, reason=f"drift {drift:.3f} <= {cfg.theta_contra}"))
+
+        # Rule 3: Confidence drop + moderate drift
+        delta_c = confidence_prior - confidence_new
+        rule3_fired = delta_c > cfg.theta_drop and drift > cfg.theta_min
+        if rule3_fired:
+            rule3_conf = min(1.0, 0.5 + delta_c)
+            rule3_reason = f"Confidence drop: Δc={delta_c:.3f}, drift={drift:.3f}"
+        else:
+            rule3_conf = 0.0
+            rule3_reason = f"No confidence drop (Δc={delta_c:.3f}, drift={drift:.3f})"
+        scores.append(RuleScore(rule="3_confidence_drop", fired=rule3_fired, confidence=rule3_conf, reason=rule3_reason))
+
+        # Rule 4: Fallback source + drift
+        rule4_fired = source in {MemorySource.FALLBACK, MemorySource.LLM_OUTPUT} and drift > cfg.theta_fallback
+        if rule4_fired:
+            rule4_conf = min(1.0, 0.5 + (drift - cfg.theta_fallback))
+            rule4_reason = f"Fallback drift: {drift:.3f} > {cfg.theta_fallback}"
+        else:
+            rule4_conf = 0.0
+            rule4_reason = "No fallback drift"
+        scores.append(RuleScore(rule="4_fallback_drift", fired=rule4_fired, confidence=rule4_conf, reason=rule4_reason))
+
+        # Aggregate: paraphrase suppresses if no structural rules fired
+        structural_fired = any(s.fired for s in scores if s.rule.startswith("0"))
+        if is_paraphrase and not structural_fired:
+            # Suppress drift-only rules
+            for s in scores:
+                if s.rule in ("2_high_drift", "3_confidence_drop", "4_fallback_drift") and s.fired:
+                    s.fired = False
+                    s.confidence *= 0.3  # Heavily reduce, don't zero
+
+        fired = [s for s in scores if s.fired and s.confidence >= threshold]
+        if fired:
+            top = max(fired, key=lambda s: s.confidence)
+            return DetectionResult(
+                is_contradiction=True,
+                reason=top.reason,
+                confidence=top.confidence,
+                rule_scores=scores,
+            )
+
+        return DetectionResult(
+            is_contradiction=False,
+            reason="No contradiction",
+            confidence=0.0,
+            rule_scores=scores,
+        )
 
     def _is_likely_paraphrase(self, text_new: str, text_prior: str, drift: float) -> bool:
         """Check if two texts are paraphrases despite semantic drift."""
